@@ -1,10 +1,17 @@
 repos:
-- repo: https://github.com/astral-sh/ruff-pre-commit
-  # Ruff version.
-  rev: v0.14.10
-  hooks:
-    # Run the linter.
-    - id: ruff-check
-      args: ["--fix"]
-    # Run the formatter.
-    - id: ruff-format
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Ruff version.
+    rev: v0.14.10
+    hooks:
+      # Run the linter.
+      - id: ruff-check
+        args: ["--fix"]
+      # Run the formatter.
+      - id: ruff-format
+  - repo: https://github.com/christophmeissner/pytest-pre-commit
+    rev: 1.0.0
+    hooks:
+    - id: pytest
+      pass_filenames: false
+      entry: uv run pytest
+      always_run: true

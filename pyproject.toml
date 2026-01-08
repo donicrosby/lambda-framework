@@ -7,7 +7,10 @@ authors = [
     { name = "Doni Crosby", email = "doni.crosby@dbtlabs.com" }
 ]
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "fastapi>=0.128.0",
+    "mangum>=0.20.0",
+]
 
 [build-system]
 requires = ["uv_build>=0.9.21,<0.10.0"]
@@ -17,8 +20,16 @@ build-backend = "uv_build"
 dev = [
     "aws-secretsmanager-caching>=1.1.3",
     "botocore>=1.42.23",
+    "fastapi[standard]>=0.128.0",
+    "githubkit>=0.14.2",
     "pre-commit>=4.5.1",
+    "pytest-asyncio>=1.3.0",
     "ruff>=0.14.10",
+]
+
+[project.optional-dependencies]
+github = [
+    "githubkit>=0.14.2",
 ]
 
 [tool.ruff]
@@ -28,3 +39,10 @@ line-length = 88
 select = ["F", "E", "W", "I", "UP",  "B", "S", "A", "D", "C90", "SIM"]
 ignore = ["E501", "D203", "D213"]
 
+[tool.ruff.lint.extend-per-file-ignores]
+"tests/*" = ["S101", "S106", "D104", "S105"]
+
+[pytest]
+minversion = "9.0"
+addopts = ["--asyncio-mode=auto", "-ra", "-q"]
+testpaths = ["tests"]
