@@ -1,6 +1,6 @@
 # Lambda Framework
 
-A Python framework for managing environment-specific configuration in AWS Lambda functions, with built-in support for secrets management via AWS Secrets Manager.
+A Python framework for managing environment-specific configuration in AWS Lambda functions, with built-in support for secrets management via AWS Secrets Manager and GitHub webhook handling.
 
 ## Features
 
@@ -8,6 +8,7 @@ A Python framework for managing environment-specific configuration in AWS Lambda
 - **Development-friendly**: Load secrets from local environment variables during development
 - **Production-ready**: Secure secrets retrieval from AWS Secrets Manager with caching for non-development environments
 - **Type-safe**: Full type hints and `py.typed` marker for IDE support
+- **GitHub Webhooks**: Pre-configured FastAPI + Mangum setup for handling GitHub webhooks in Lambda with automatic signature validation and typed event parsing
 
 ## Installation
 
@@ -19,6 +20,20 @@ Or with [uv](https://github.com/astral-sh/uv):
 
 ```bash
 uv add lambda-framework
+```
+
+### With GitHub Webhook Support
+
+To use the GitHub webhook features, install with the `github` extra:
+
+```bash
+pip install lambda-framework[github]
+```
+
+Or with uv:
+
+```bash
+uv add lambda-framework[github]
 ```
 
 ## Quick Start
@@ -156,6 +171,48 @@ For production environments, your Lambda function needs the following IAM permis
   ]
 }
 ```
+
+## GitHub Webhooks
+
+The framework provides a pre-configured FastAPI application with Mangum for handling GitHub webhooks in AWS Lambda.
+
+### Quick Start
+
+Create a Lambda handler file (e.g., `handler.py`):
+
+```python
+from lambda_framework.webhook import app, handler, GithubWebhookRouter
+from githubkit.versions.latest.webhooks import PushEvent
+
+# Create a webhook router with your GitHub webhook secret
+webhook_router = GithubWebhookRouter(webhook_secret="your-webhook-secret")
+
+@webhook_router.add_webhook("/github")
+async def handle_push(event: PushEvent):
+    # event is automatically validated and parsed into a typed object
+    print(f"Push to {event.repository.full_name} by {event.sender.login}")
+    return {"status": "ok"}
+
+# Register the router with the pre-configured app
+webhook_router.register(app)
+
+# Export the handler for Lambda
+lambda_handler = handler
+```
+
+### Exports
+
+| Export | Description |
+|--------|-------------|
+| `app` | Pre-configured FastAPI application |
+| `handler` | Mangum handler wrapping the app (use as your Lambda handler) |
+| `GithubWebhookRouter` | Router for registering webhook handlers with automatic validation |
+
+### How It Works
+
+1. **Signature Validation**: Incoming webhooks are automatically validated against your webhook secret using GitHub's HMAC-SHA256 signature
+2. **Typed Event Parsing**: Payloads are parsed into strongly-typed event objects from `githubkit` (e.g., `PushEvent`, `PullRequestEvent`, `CheckRunEvent`)
+3. **Lambda Ready**: The Mangum handler translates API Gateway events to ASGI, making your FastAPI app Lambda-compatible
 
 ## Development
 
