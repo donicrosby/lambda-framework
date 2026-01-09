@@ -4,6 +4,7 @@ import asyncio
 import inspect
 from collections.abc import Callable
 from functools import wraps
+from types import UnionType
 from typing import TYPE_CHECKING, Annotated, Any, TypeVar
 
 from fastapi import APIRouter, Body, Depends, FastAPI, Header, HTTPException, Security
@@ -88,7 +89,9 @@ class GithubWebhookParser:
         self.parse_obj = parse_obj
         self.validator: GithubWebhookValidator = validator
 
-    def as_dependency(self, event_type: type[E] | None = None) -> Callable[..., E]:
+    def as_dependency(
+        self, event_type: type[E] | UnionType | None = None
+    ) -> Callable[..., E]:
         """Create a FastAPI dependency that parses and returns the webhook event.
 
         Args:
@@ -190,9 +193,11 @@ class GithubWebhookRouter:
                 parser_dep = self._parser.as_dependency(None)
             else:
                 annotation_type = user_event_type
-                # Pass type for better typing; it's a type at runtime
+                # Pass type for better typing; it's a type or UnionType at runtime
                 parser_dep = self._parser.as_dependency(
-                    user_event_type if isinstance(user_event_type, type) else None
+                    user_event_type
+                    if isinstance(user_event_type, (type, UnionType))
+                    else None
                 )
 
             # Preserve user's type annotation with Depends() wrapper
