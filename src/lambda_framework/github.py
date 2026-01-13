@@ -52,8 +52,7 @@ class LambdaThrottler(BaseThrottler):
 
     @override
     @contextmanager
-    def aquire(self, request: httpx.Request) -> Generator[None, Any, Any]:
-        """Acquire a semaphore for the request."""
+    def acquire(self, request: httpx.Request) -> Generator[None, Any, Any]:
         with self.semaphore:
             yield
         if request.method in self._MUTATING_METHODS:
@@ -61,8 +60,7 @@ class LambdaThrottler(BaseThrottler):
 
     @override
     @asynccontextmanager
-    async def aquire_async(self, request: httpx.Request) -> AsyncGenerator[None, Any]:
-        """Acquire a semaphore for the request."""
+    async def async_acquire(self, request: httpx.Request) -> AsyncGenerator[None, Any]:
         async with self.async_semaphore:
             yield
         if request.method in self._MUTATING_METHODS:
