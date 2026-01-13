@@ -1,7 +1,7 @@
 [project]
 name = "lambda-framework"
-version = "0.1.0"
-description = "Add your description here"
+version = "0.2.0"
+description = "A Python framework for managing environment-specific configuration in AWS Lambda functions, with built-in support for secrets management via AWS Secrets Manager and GitHub webhook handling."
 readme = "README.md"
 authors = [
     { name = "Doni Crosby", email = "doni.crosby@dbtlabs.com" }
