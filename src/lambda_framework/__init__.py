@@ -24,4 +24,7 @@ __all__ = [
 ]
 
 if githubkit is not None:
+    from .github import LambdaThrottler  # noqa: F401
+
+    __all__.append("LambdaThrottler")  # noqa: F401
     __all__.append("githubkit")

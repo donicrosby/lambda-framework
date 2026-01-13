@@ -10,6 +10,7 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.128.0",
     "mangum>=0.20.0",
+    "pottery-semaphore",
 ]
 
 [build-system]
@@ -30,6 +31,7 @@ dev = [
 [project.optional-dependencies]
 github = [
     "githubkit>=0.14.2",
+    "pottery>=3.0.1",
 ]
 
 [tool.ruff]
@@ -42,7 +44,10 @@ ignore = ["E501", "D203", "D213"]
 [tool.ruff.lint.extend-per-file-ignores]
 "tests/*" = ["S101", "S106", "D104", "S105"]
 
-[pytest]
+[tool.uv.sources]
+pottery-semaphore = { git = "https://github.com/donicrosby/pottery-semaphore.git" }
+
+[tool.pytest]
 minversion = "9.0"
 addopts = ["--asyncio-mode=auto", "-ra", "-q"]
 testpaths = ["tests"]
