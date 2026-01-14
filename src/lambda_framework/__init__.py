@@ -11,7 +11,6 @@ from .webhook import (
     GithubWebhookParser,
     GithubWebhookRouter,
     GithubWebhookValidator,
-    githubkit,
 )
 
 __all__ = [
@@ -23,8 +22,21 @@ __all__ = [
     "fastapi",
 ]
 
-if githubkit is not None:
+# Optional cache module (requires redis package)
+try:
+    from .cache import CacheInfo, async_redis_cache
+
+    __all__.extend(["async_redis_cache", "CacheInfo"])
+except ImportError:
+    async_redis_cache = None  # type: ignore[assignment,misc]
+    CacheInfo = None  # type: ignore[assignment,misc]
+
+try:
+    import githubkit  # noqa: F401
+
     from .github import LambdaThrottler  # noqa: F401
 
-    __all__.append("LambdaThrottler")  # noqa: F401
-    __all__.append("githubkit")
+    __all__.extend(["LambdaThrottler", "githubkit"])  # noqa: F401
+except ImportError:
+    LambdaThrottler = None  # type: ignore[assignment,misc]
+    githubkit = None  # type: ignore[assignment,misc]

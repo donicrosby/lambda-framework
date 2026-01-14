@@ -21,22 +21,45 @@ class LambdaThrottler(BaseThrottler):
 
     _MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
-    def __init__(self, max_concurrency: int, valkey_url: str) -> None:
+    def __init__(
+        self,
+        max_concurrency: int,
+        valkey_url: str | None = None,
+        valkey: Redis | None = None,
+        aiovalkey: AIORedis | None = None,
+    ) -> None:
         """Initialize the throttler."""
         self.max_concurrency = max_concurrency
-        self._valkey_url = valkey_url
-        self._valkey: Redis | None = None
-        self._aiovalkey: AIORedis | None = None
+        self._valkey_url: str | None = valkey_url
+        self._valkey: Redis | None = valkey
+        self._aiovalkey: AIORedis | None = aiovalkey
         self._semaphore: Semaphore | None = None
         self._async_semaphore: AIOSemaphore | None = None
+
+    def _get_valkey(self) -> Redis:
+        """Get the valkey."""
+        if self._valkey is None:
+            if self._valkey_url is None:
+                raise ValueError("valkey_url is required")
+            self._valkey = Redis.from_url(url=self._valkey_url)
+        return self._valkey
+
+    def _get_aiovalkey(self) -> AIORedis:
+        """Get the aiovalkey."""
+        if self._aiovalkey is None:
+            if self._valkey_url is None:
+                raise ValueError("valkey_url is required")
+            self._aiovalkey = AIORedis.from_url(url=self._valkey_url)
+        return self._aiovalkey
 
     @property
     def semaphore(self) -> Semaphore:
         """Get the semaphore."""
         if self._semaphore is None:
-            self._valkey = Redis.from_url(url=self._valkey_url)
             self._semaphore = Semaphore(
-                value=self.max_concurrency, key=_THROTTLE_KEY, masters={self._valkey}
+                value=self.max_concurrency,
+                key=_THROTTLE_KEY,
+                masters={self._get_valkey()},
             )
         return self._semaphore
 
@@ -44,9 +67,10 @@ class LambdaThrottler(BaseThrottler):
     def async_semaphore(self) -> AIOSemaphore:
         """Get the async semaphore."""
         if self._async_semaphore is None:
-            self._aiovalkey = AIORedis.from_url(url=self._valkey_url)
             self._async_semaphore = AIOSemaphore(
-                value=self.max_concurrency, key=_THROTTLE_KEY, masters={self._aiovalkey}
+                value=self.max_concurrency,
+                key=_THROTTLE_KEY,
+                masters={self._get_aiovalkey()},
             )
         return self._async_semaphore
 
