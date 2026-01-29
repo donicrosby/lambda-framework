@@ -12,6 +12,8 @@ import botocore
 import botocore.session
 from aws_secretsmanager_caching import SecretCache, SecretCacheConfig
 
+__all__ = ["EnvConfigBase", "SecretCacheConfig"]
+
 
 class EnvConfigBase:
     """Base class for environment configuration management.
@@ -44,6 +46,7 @@ class EnvConfigBase:
         self._env = env
         self._load_local_secrets_env = load_local_secrets_env
         self._aws_secret_name = aws_secret_name
+        self._parsed_secrets: dict[str, Any] | None = None
         if not self.load_local_secrets:
             if self._aws_secret_name is None:
                 raise ValueError(
@@ -70,6 +73,30 @@ class EnvConfigBase:
         """The AWS Secrets Manager cache instance, or None if loading local secrets."""
         return self._secret_cache
 
+    def _get_parsed_secrets(self) -> dict[str, Any]:
+        """Retrieve and cache the parsed secrets dictionary from AWS Secrets Manager.
+
+        Returns:
+            The parsed secrets dictionary.
+
+        Raises:
+            ValueError: If the secret cache is not configured.
+
+        """
+        if self._parsed_secrets is not None:
+            return self._parsed_secrets
+
+        if self._secret_cache is None:
+            raise ValueError(
+                "Expected secret cache to be setup when loading secrets from AWS Secrets Manager"
+            )
+        raw_secret_bytes: bytes = self._secret_cache.get_secret_binary(
+            self._aws_secret_name
+        )
+        parsed: dict[str, Any] = json.loads(raw_secret_bytes)
+        self._parsed_secrets = parsed
+        return parsed
+
     def get_secret(self, secret_name: str) -> str:
         """Retrieve a secret by name.
 
@@ -85,22 +112,17 @@ class EnvConfigBase:
 
         """
         if self.load_local_secrets:
-            secret = os.getenv(secret_name)
-            if secret is None:
+            secret_value = os.getenv(secret_name)
+            if secret_value is None:
                 raise ValueError(
                     f"Expected secret {secret_name} to be set in environment variables"
                 )
-            return secret
-        else:
-            if self._secret_cache is None:
-                raise ValueError(
-                    "Expected secret cache to be setup when loading secrets from AWS Secrets Manager"
-                )
-            secrets: bytes = self._secret_cache.get_secret_binary(self._aws_secret_name)
-            secrets_json: dict[str, Any] = json.loads(secrets)
-            secret: Any = secrets_json.get(secret_name)
-            if secret is None:
-                raise ValueError(
-                    f"Expected secret {secret_name} to be set in AWS Secrets Manager"
-                )
-            return str(secret)
+            return secret_value
+
+        secrets_dict = self._get_parsed_secrets()
+        secret_value = secrets_dict.get(secret_name)
+        if secret_value is None:
+            raise ValueError(
+                f"Expected secret {secret_name} to be set in AWS Secrets Manager"
+            )
+        return str(secret_value)

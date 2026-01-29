@@ -30,7 +30,7 @@ class TestGithubWebhookValidator:
     def test_init_stores_secret(self):
         """Validator should store the provided secret."""
         validator = GithubWebhookValidator(secret="test-secret")
-        assert validator.secret == "test-secret"
+        assert validator._secret == "test-secret"
 
     def test_call_raises_import_error_when_verify_missing(self):
         """Should raise ImportError when githubkit verify is not available."""

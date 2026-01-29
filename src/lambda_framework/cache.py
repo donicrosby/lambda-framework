@@ -5,13 +5,17 @@ supporting TTL, custom key functions, and JSON serialization.
 """
 
 import functools
+import hashlib
 import json
 import logging
-from collections.abc import Awaitable, Callable, Hashable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, ParamSpec, TypeVar, overload
 
 from redis.asyncio import Redis as AIORedis
+from redis.exceptions import RedisError
+
+__all__ = ["async_redis_cache", "CacheInfo"]
 
 _DEFAULT_TIMEOUT: int = 60  # One minute in seconds
 
@@ -26,7 +30,15 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class CacheInfo:
-    """Cache statistics, similar to functools.lru_cache().cache_info()."""
+    """Cache statistics, similar to functools.lru_cache().cache_info().
+
+    Note:
+        Statistics are approximate in concurrent scenarios. The hit/miss counters
+        are not thread-safe and may have minor inaccuracies under high concurrency.
+        The currsize only tracks keys added by the current process, not the total
+        number of keys in Redis.
+
+    """
 
     hits: int = 0
     misses: int = 0
@@ -59,12 +71,12 @@ def _decode(encoded_value: str) -> JSONTypes:
     return json.loads(encoded_value)
 
 
-def _default_key_func(
-    func: Callable[P, Any], *args: Hashable, **kwargs: Hashable
-) -> str:
+def _default_key_func(func: Callable[P, Any], *args: Any, **kwargs: Any) -> str:
     """Generate a cache key from function signature and arguments.
 
-    This matches pottery's key generation approach using hash of args/kwargs.
+    Uses a deterministic hash (SHA-256) to ensure consistent cache keys
+    across Python interpreter restarts (unlike Python's built-in hash()
+    which is randomized by PYTHONHASHSEED).
 
     Args:
         func: The decorated function.
@@ -75,8 +87,10 @@ def _default_key_func(
         A string cache key combining the function name and argument hash.
 
     """
-    kwargs_items = frozenset(kwargs.items())
-    arg_hash = hash((args, kwargs_items))
+    # Serialize arguments to JSON for deterministic hashing
+    # Sort kwargs for consistent ordering
+    key_data = json.dumps({"args": args, "kwargs": kwargs}, sort_keys=True)
+    arg_hash = hashlib.sha256(key_data.encode()).hexdigest()[:16]
     func_name = getattr(func, "__qualname__", func.__name__)  # type: ignore[attr-defined]
     func_module = getattr(func, "__module__", "__main__")
     return f"{func_module}:{func_name}:{arg_hash}"
@@ -123,7 +137,7 @@ def async_redis_cache(  # noqa: C901
             Either `redis` or `redis_url` must be provided.
         key: Optional key prefix for the cache. Defaults to function's qualified name.
         timeout: Time-to-live in seconds for cached values.
-            Defaults to one week (604800 seconds). Set to None for no expiration.
+            Defaults to 60 seconds. Set to None for no expiration.
         key_func: Optional custom function to generate cache keys.
             Should accept (func, *args, **kwargs) and return a string.
             Defaults to pottery-style key generation using argument hashing.
@@ -207,7 +221,7 @@ def async_redis_cache(  # noqa: C901
                 if cached_value is not None:
                     cache_info.hits += 1
                     return _decode(cached_value)  # type: ignore[return-value]
-            except Exception:
+            except RedisError:
                 # On Redis errors, fall through to call the function
                 # This matches pottery's behavior of graceful degradation
                 logger.debug(
@@ -227,7 +241,7 @@ def async_redis_cache(  # noqa: C901
                     await client.set(cache_key, encoded_value)
                 # Track this key for potential clearing
                 _cache_keys.add(cache_key)
-            except Exception:
+            except RedisError:
                 # On Redis errors, silently fail - the function result is still returned
                 # This matches pottery's behavior
                 logger.debug("Redis cache set failed for key %s", cache_key)
@@ -253,7 +267,7 @@ def async_redis_cache(  # noqa: C901
                     client = await _get_redis()
                     await client.delete(*_cache_keys)
                     logger.debug("Cleared %d cache keys", len(_cache_keys))
-                except Exception:
+                except RedisError:
                     logger.debug("Failed to clear cache keys from Redis")
             _cache_keys.clear()
             cache_info.hits = 0

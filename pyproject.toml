@@ -8,6 +8,7 @@ authors = [
 ]
 requires-python = ">=3.11"
 dependencies = [
+    "aws-secretsmanager-caching>=1.1.3",
     "fastapi>=0.128.0",
     "mangum>=0.20.0",
 ]
@@ -18,12 +19,12 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
-    "aws-secretsmanager-caching>=1.1.3",
     "botocore>=1.42.23",
     "fastapi[standard]>=0.128.0",
     "githubkit>=0.14.2",
     "pre-commit>=4.5.1",
     "pytest-asyncio>=1.3.0",
+    "pytest-cov>=6.0.0",
     "redis>=7.0.0",
     "ruff>=0.14.10",
     "types-redis>=4.6.0.20241004",
@@ -38,6 +39,7 @@ github = [
     "githubkit>=0.14.2",
     "pottery>=3.0.1",
     "pottery-semaphore",
+    "redis>=7.0.0",
 ]
 
 [tool.ruff]

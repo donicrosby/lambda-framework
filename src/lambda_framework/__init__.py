@@ -4,8 +4,6 @@ Provides a base class for managing environment-specific configuration,
 including secrets retrieval from AWS Secrets Manager or local environment variables.
 """
 
-import fastapi
-
 from .env_config import EnvConfigBase, SecretCacheConfig
 from .webhook import (
     GithubWebhookParser,
@@ -19,7 +17,6 @@ __all__ = [
     "GithubWebhookRouter",
     "GithubWebhookValidator",
     "GithubWebhookParser",
-    "fastapi",
 ]
 
 # Optional cache module (requires redis package)
@@ -31,12 +28,10 @@ except ImportError:
     async_redis_cache = None  # type: ignore[assignment,misc]
     CacheInfo = None  # type: ignore[assignment,misc]
 
+# Optional github module (requires githubkit package)
 try:
-    import githubkit  # noqa: F401
+    from .github import LambdaThrottler
 
-    from .github import LambdaThrottler  # noqa: F401
-
-    __all__.extend(["LambdaThrottler", "githubkit"])  # noqa: F401
+    __all__.append("LambdaThrottler")
 except ImportError:
     LambdaThrottler = None  # type: ignore[assignment,misc]
-    githubkit = None  # type: ignore[assignment,misc]

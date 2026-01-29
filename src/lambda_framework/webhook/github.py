@@ -14,6 +14,8 @@ if TYPE_CHECKING:
 
 E = TypeVar("E", bound="WebhookEvent")
 
+__all__ = ["GithubWebhookValidator", "GithubWebhookParser", "GithubWebhookRouter"]
+
 try:
     from githubkit.webhooks import parse_obj, verify
 except ImportError:
@@ -35,7 +37,7 @@ class GithubWebhookValidator:
             secret: The GitHub webhook secret configured in the repository settings.
 
         """
-        self.secret = secret
+        self._secret = secret
 
     def __call__(
         self,
@@ -60,7 +62,7 @@ class GithubWebhookValidator:
             raise ImportError(
                 "Githubkit is missing, please install the 'github' optional dependency."
             )
-        if not verify(self.secret, payload, x_hub_signature_256):
+        if not verify(self._secret, payload, x_hub_signature_256):
             raise HTTPException(status_code=401, detail="Invalid signature")
         return payload
 
