@@ -20,7 +20,7 @@ resource "aws_cloudwatch_event_target" "lambda" {
   rule           = aws_cloudwatch_event_rule.trigger[0].name
   event_bus_name = var.eventbridge_trigger.event_bus_name
   target_id      = "${var.function_name}-target"
-  arn            = aws_lambda_function.this.arn
+  arn            = local.lambda_function.arn
 }
 
 # Lambda permission for EventBridge
@@ -30,7 +30,7 @@ resource "aws_lambda_permission" "eventbridge" {
 
   statement_id  = "AllowEventBridgeInvoke"
   action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.this.function_name
+  function_name = local.lambda_function.function_name
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.trigger[0].arn
 }

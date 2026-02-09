@@ -70,6 +70,16 @@ variable "additional_inline_policies" {
 }
 
 # ==============================================================================
+# Lifecycle Configuration
+# ==============================================================================
+
+variable "image_managed_externally" {
+  description = "If true, Terraform will ignore changes to image_uri, allowing CI/CD pipelines to update the container image independently. When false, Terraform manages the full image lifecycle."
+  type        = bool
+  default     = false
+}
+
+# ==============================================================================
 # Lambda Function Configuration
 # ==============================================================================
 

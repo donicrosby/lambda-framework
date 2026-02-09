@@ -72,7 +72,7 @@ resource "aws_lambda_event_source_mapping" "sqs" {
   count = var.sqs_trigger.enabled ? 1 : 0
 
   event_source_arn = var.sqs_trigger.existing_queue_arn != null ? var.sqs_trigger.existing_queue_arn : aws_sqs_queue.trigger[0].arn
-  function_name    = aws_lambda_function.this.arn
+  function_name    = local.lambda_function.arn
   batch_size       = var.sqs_trigger.batch_size
 
   maximum_batching_window_in_seconds = var.sqs_trigger.maximum_batching_window

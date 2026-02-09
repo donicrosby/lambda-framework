@@ -42,6 +42,7 @@ No modules.
 | [aws_iam_role_policy.xray](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role_policy) | resource |
 | [aws_iam_role_policy_attachment.additional](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role_policy_attachment) | resource |
 | [aws_lambda_event_source_mapping.sqs](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lambda_event_source_mapping) | resource |
+| [aws_lambda_function.ci_managed](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lambda_function) | resource |
 | [aws_lambda_function.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lambda_function) | resource |
 | [aws_lambda_permission.api_gateway](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lambda_permission) | resource |
 | [aws_lambda_permission.eventbridge](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lambda_permission) | resource |
@@ -78,6 +79,7 @@ No modules.
 | <a name="input_existing_execution_role_arn"></a> [existing\_execution\_role\_arn](#input\_existing\_execution\_role\_arn) | ARN of an existing IAM role to use for Lambda execution. If not provided, a new role will be created with least-privilege permissions. | `string` | `null` | no |
 | <a name="input_function_name"></a> [function\_name](#input\_function\_name) | Name of the Lambda function. Must be unique within the AWS account and region. | `string` | n/a | yes |
 | <a name="input_image_config"></a> [image\_config](#input\_image\_config) | Container image configuration overrides. | <pre>object({<br/>    command           = optional(list(string))<br/>    entry_point       = optional(list(string))<br/>    working_directory = optional(string)<br/>  })</pre> | `null` | no |
+| <a name="input_image_managed_externally"></a> [image\_managed\_externally](#input\_image\_managed\_externally) | If true, Terraform will ignore changes to image\_uri, allowing CI/CD pipelines to update the container image independently. When false, Terraform manages the full image lifecycle. | `bool` | `false` | no |
 | <a name="input_image_uri"></a> [image\_uri](#input\_image\_uri) | ECR image URI for the Lambda function. Must be a valid ECR URI with tag or digest. | `string` | n/a | yes |
 | <a name="input_log_format"></a> [log\_format](#input\_log\_format) | CloudWatch log format. Valid values are Text or JSON. | `string` | `"JSON"` | no |
 | <a name="input_log_kms_key_arn"></a> [log\_kms\_key\_arn](#input\_log\_kms\_key\_arn) | ARN of KMS key for CloudWatch log encryption. If not provided, logs use AWS managed encryption. | `string` | `null` | no |

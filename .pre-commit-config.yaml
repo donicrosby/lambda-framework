@@ -70,8 +70,8 @@ repos:
     - id: pytest
       pass_filenames: false
       entry: uv run pytest -m "not integration"
-      always_run: true
-      types: [python]
+      files: ^src|tests/
+      types_or: [python]
   - repo: https://github.com/compilerla/conventional-pre-commit
     rev: v4.3.0
     hooks:
