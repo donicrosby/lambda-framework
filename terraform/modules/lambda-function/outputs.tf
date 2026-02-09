@@ -126,7 +126,7 @@ output "eventbridge_rule_name" {
 # ==============================================================================
 
 output "created_secret_arns" {
-  description = "ARNs of secrets created by this module"
+  description = "ARN of the secret created by this module"
   value       = local.created_secret_arns
 }
 

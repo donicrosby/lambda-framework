@@ -199,20 +199,15 @@ variable "secrets_manager_arns" {
   }
 }
 
-variable "create_secrets" {
-  description = "Whether to create new Secrets Manager secrets. If true, use the secrets variable to define them."
-  type        = bool
-  default     = false
-}
-
-variable "secrets" {
-  description = "Map of secrets to create. Key is secret name, value is secret configuration."
-  type = map(object({
+variable "secret_config" {
+  description = "Configuration for a single Secrets Manager secret (JSON dictionary). Set to null to skip creation."
+  type = object({
+    name                    = string
     description             = optional(string, "")
     kms_key_id              = optional(string)
     recovery_window_in_days = optional(number, 30)
-  }))
-  default = {}
+  })
+  default = null
 }
 
 variable "secrets_kms_key_arn" {

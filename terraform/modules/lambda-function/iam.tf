@@ -11,7 +11,7 @@ locals {
   # Collect all secret ARNs (existing + created)
   all_secret_arns = concat(
     var.secrets_manager_arns,
-    [for secret in aws_secretsmanager_secret.this : secret.arn]
+    var.secret_config != null ? [aws_secretsmanager_secret.this[0].arn] : []
   )
 }
 

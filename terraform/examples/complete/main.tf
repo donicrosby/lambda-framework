@@ -253,13 +253,11 @@ module "lambda" {
     security_group_ids = [aws_security_group.lambda.id]
   }
 
-  # Secrets Manager - Create new secrets
-  create_secrets = true
-  secrets = {
-    "${var.function_name}/${var.environment}/secrets" = {
-      description = "Secrets for ${var.function_name} in ${var.environment}"
-      kms_key_id  = aws_kms_key.lambda.arn
-    }
+  # Secrets Manager - Create a single secret (JSON dictionary)
+  secret_config = {
+    name        = "${var.function_name}/${var.environment}/secrets"
+    description = "Secrets for ${var.function_name} in ${var.environment}"
+    kms_key_id  = aws_kms_key.lambda.arn
   }
   secrets_kms_key_arn = aws_kms_key.lambda.arn
 
