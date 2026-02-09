@@ -279,7 +279,7 @@ data "aws_iam_policy_document" "dlq" {
     effect = "Allow"
     actions = can(regex("^arn:aws:sqs:", var.dead_letter_config.target_arn)) ? [
       "sqs:SendMessage"
-    ] : [
+      ] : [
       "sns:Publish"
     ]
     resources = [var.dead_letter_config.target_arn]

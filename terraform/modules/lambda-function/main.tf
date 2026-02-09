@@ -78,16 +78,6 @@ resource "aws_lambda_function" "this" {
     Name = var.function_name
   })
 
-  # Ensure IAM role and log group are ready before creating the function
-  depends_on = [
-    aws_cloudwatch_log_group.lambda,
-    aws_iam_role_policy.cloudwatch_logs,
-    aws_iam_role_policy.xray,
-    aws_iam_role_policy.vpc,
-    aws_iam_role_policy.secrets_manager,
-    null_resource.multi_az_check
-  ]
-
   lifecycle {
     # Prevent accidental deletion of the function
     prevent_destroy = false

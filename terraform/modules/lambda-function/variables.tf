@@ -325,19 +325,19 @@ variable "api_gateway" {
 variable "sqs_trigger" {
   description = "SQS trigger configuration for the Lambda function."
   type = object({
-    enabled                        = bool
-    existing_queue_arn             = optional(string)
-    batch_size                     = optional(number, 10)
-    maximum_batching_window        = optional(number, 0)
-    visibility_timeout_seconds     = optional(number, 300)
-    message_retention_seconds      = optional(number, 345600)
-    receive_wait_time_seconds      = optional(number, 20)
-    kms_key_id                     = optional(string)
-    create_dlq                     = optional(bool, true)
-    dlq_max_receive_count          = optional(number, 3)
-    function_response_types        = optional(list(string), ["ReportBatchItemFailures"])
-    maximum_concurrency            = optional(number)
-    filtering_criteria             = optional(string)
+    enabled                    = bool
+    existing_queue_arn         = optional(string)
+    batch_size                 = optional(number, 10)
+    maximum_batching_window    = optional(number, 0)
+    visibility_timeout_seconds = optional(number, 300)
+    message_retention_seconds  = optional(number, 345600)
+    receive_wait_time_seconds  = optional(number, 20)
+    kms_key_id                 = optional(string)
+    create_dlq                 = optional(bool, true)
+    dlq_max_receive_count      = optional(number, 3)
+    function_response_types    = optional(list(string), ["ReportBatchItemFailures"])
+    maximum_concurrency        = optional(number)
+    filtering_criteria         = optional(string)
   })
   default = {
     enabled = false
@@ -356,10 +356,10 @@ variable "sqs_trigger" {
 variable "eventbridge_trigger" {
   description = "EventBridge trigger configuration for the Lambda function."
   type = object({
-    enabled       = bool
-    schedule      = optional(string)
-    event_pattern = optional(string)
-    description   = optional(string, "EventBridge rule for Lambda trigger")
+    enabled        = bool
+    schedule       = optional(string)
+    event_pattern  = optional(string)
+    description    = optional(string, "EventBridge rule for Lambda trigger")
     event_bus_name = optional(string, "default")
   })
   default = {
