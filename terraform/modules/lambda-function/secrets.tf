@@ -3,9 +3,15 @@
 # Creates a single secret for the Lambda function's JSON dictionary
 # ==============================================================================
 
+# Warn if secret_value is set without secret_config (value would be silently ignored)
+check "secret_value_requires_config" {
+  assert {
+    condition     = var.secret_value == null || var.secret_config != null
+    error_message = "var.secret_value is set but var.secret_config is null — the secret value will not be created. Provide secret_config to create the secret, or remove secret_value."
+  }
+}
+
 # Create a single secret if configured
-# Note: Secret values should be set outside of Terraform (via AWS Console, CLI, or 
-# a separate process) to avoid storing sensitive data in Terraform state.
 resource "aws_secretsmanager_secret" "this" {
   count = var.secret_config != null ? 1 : 0
 
@@ -19,6 +25,15 @@ resource "aws_secretsmanager_secret" "this" {
     Name           = var.secret_config.name
     LambdaFunction = var.function_name
   })
+}
+
+# Set the secret value if provided
+# Note: This stores the secret value in Terraform state. Ensure state is encrypted.
+resource "aws_secretsmanager_secret_version" "this" {
+  count = var.secret_config != null && var.secret_value != null ? 1 : 0
+
+  secret_id     = aws_secretsmanager_secret.this[0].id
+  secret_string = jsonencode(var.secret_value)
 }
 
 # Output for created secret ARN (useful for setting up rotation or initial values)

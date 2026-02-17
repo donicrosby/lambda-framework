@@ -47,6 +47,7 @@ No modules.
 | [aws_lambda_permission.api_gateway](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lambda_permission) | resource |
 | [aws_lambda_permission.eventbridge](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lambda_permission) | resource |
 | [aws_secretsmanager_secret.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/secretsmanager_secret) | resource |
+| [aws_secretsmanager_secret_version.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/secretsmanager_secret_version) | resource |
 | [aws_sqs_queue.dlq](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/sqs_queue) | resource |
 | [aws_sqs_queue.trigger](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/sqs_queue) | resource |
 | [aws_sqs_queue_policy.trigger](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/sqs_queue_policy) | resource |
@@ -87,6 +88,7 @@ No modules.
 | <a name="input_memory_size"></a> [memory\_size](#input\_memory\_size) | Amount of memory in MB allocated to the Lambda function. | `number` | `256` | no |
 | <a name="input_reserved_concurrent_executions"></a> [reserved\_concurrent\_executions](#input\_reserved\_concurrent\_executions) | Reserved concurrent executions for this function. Set to -1 for unreserved, 0 to disable. | `number` | `-1` | no |
 | <a name="input_secret_config"></a> [secret\_config](#input\_secret\_config) | Configuration for a single Secrets Manager secret (JSON dictionary). Set to null to skip creation. | <pre>object({<br/>    name                    = string<br/>    description             = optional(string, "")<br/>    kms_key_id              = optional(string)<br/>    recovery_window_in_days = optional(number, 30)<br/>  })</pre> | `null` | no |
+| <a name="input_secret_value"></a> [secret\_value](#input\_secret\_value) | Key-value pairs for the secret value. Will be JSON-encoded and stored as the secret version. Only used when secret\_config is also provided. Note: this value will be stored in Terraform state. | `map(string)` | `null` | no |
 | <a name="input_secrets_kms_key_arn"></a> [secrets\_kms\_key\_arn](#input\_secrets\_kms\_key\_arn) | ARN of KMS key used to encrypt secrets. Required for kms:Decrypt permissions if secrets use a CMK. | `string` | `null` | no |
 | <a name="input_secrets_manager_arns"></a> [secrets\_manager\_arns](#input\_secrets\_manager\_arns) | List of existing Secrets Manager secret ARNs to grant read access to. | `list(string)` | `[]` | no |
 | <a name="input_sqs_trigger"></a> [sqs\_trigger](#input\_sqs\_trigger) | SQS trigger configuration for the Lambda function. | <pre>object({<br/>    enabled                    = bool<br/>    existing_queue_arn         = optional(string)<br/>    batch_size                 = optional(number, 10)<br/>    maximum_batching_window    = optional(number, 0)<br/>    visibility_timeout_seconds = optional(number, 300)<br/>    message_retention_seconds  = optional(number, 345600)<br/>    receive_wait_time_seconds  = optional(number, 20)<br/>    kms_key_id                 = optional(string)<br/>    create_dlq                 = optional(bool, true)<br/>    dlq_max_receive_count      = optional(number, 3)<br/>    function_response_types    = optional(list(string), ["ReportBatchItemFailures"])<br/>    maximum_concurrency        = optional(number)<br/>    filtering_criteria         = optional(string)<br/>  })</pre> | <pre>{<br/>  "enabled": false<br/>}</pre> | no |
@@ -106,6 +108,7 @@ No modules.
 | <a name="output_api_gateway_stage_name"></a> [api\_gateway\_stage\_name](#output\_api\_gateway\_stage\_name) | Name of the API Gateway stage |
 | <a name="output_api_gateway_url"></a> [api\_gateway\_url](#output\_api\_gateway\_url) | URL of the API Gateway HTTP API endpoint |
 | <a name="output_created_secret_arns"></a> [created\_secret\_arns](#output\_created\_secret\_arns) | ARN of the secret created by this module |
+| <a name="output_created_secret_version_id"></a> [created\_secret\_version\_id](#output\_created\_secret\_version\_id) | Version ID of the secret value created by this module |
 | <a name="output_eventbridge_rule_arn"></a> [eventbridge\_rule\_arn](#output\_eventbridge\_rule\_arn) | ARN of the EventBridge rule |
 | <a name="output_eventbridge_rule_name"></a> [eventbridge\_rule\_name](#output\_eventbridge\_rule\_name) | Name of the EventBridge rule |
 | <a name="output_execution_role_arn"></a> [execution\_role\_arn](#output\_execution\_role\_arn) | ARN of the Lambda execution role |

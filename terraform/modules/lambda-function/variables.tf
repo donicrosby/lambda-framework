@@ -220,6 +220,13 @@ variable "secret_config" {
   default = null
 }
 
+variable "secret_value" {
+  description = "Key-value pairs for the secret value. Will be JSON-encoded and stored as the secret version. Only used when secret_config is also provided. Note: this value will be stored in Terraform state."
+  type        = map(string)
+  default     = null
+  sensitive   = true
+}
+
 variable "secrets_kms_key_arn" {
   description = "ARN of KMS key used to encrypt secrets. Required for kms:Decrypt permissions if secrets use a CMK."
   type        = string

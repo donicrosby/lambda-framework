@@ -135,6 +135,11 @@ output "all_secret_arns" {
   value       = local.all_secret_arns
 }
 
+output "created_secret_version_id" {
+  description = "Version ID of the secret value created by this module"
+  value       = var.secret_config != null && var.secret_value != null ? aws_secretsmanager_secret_version.this[0].version_id : null
+}
+
 # ==============================================================================
 # VPC Outputs
 # ==============================================================================
