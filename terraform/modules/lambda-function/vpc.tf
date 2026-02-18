@@ -35,16 +35,14 @@
 # ==============================================================================
 
 data "aws_subnet" "selected" {
-  for_each = var.vpc_config != null ? toset(var.vpc_config.subnet_ids) : toset([])
+  count = var.vpc_config != null ? length(var.vpc_config.subnet_ids) : 0
 
-  id = each.value
+  id = var.vpc_config.subnet_ids[count.index]
 }
 
 locals {
-  # Get unique AZs from the provided subnets
   subnet_azs = var.vpc_config != null ? distinct([for subnet in data.aws_subnet.selected : subnet.availability_zone]) : []
 
-  # Validate that subnets span multiple AZs for CIS Lambda.5
   multi_az_validated = var.vpc_config == null || length(local.subnet_azs) >= 2
 }
 
