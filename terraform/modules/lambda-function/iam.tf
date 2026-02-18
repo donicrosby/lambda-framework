@@ -131,7 +131,7 @@ data "aws_iam_policy_document" "secrets_manager" {
       condition {
         test     = "StringEquals"
         variable = "kms:ViaService"
-        values   = ["secretsmanager.${data.aws_region.current.name}.amazonaws.com"]
+        values   = ["secretsmanager.${data.aws_region.current.id}.amazonaws.com"]
       }
     }
   }
@@ -159,12 +159,12 @@ data "aws_iam_policy_document" "vpc" {
       "ec2:CreateNetworkInterface"
     ]
     resources = [
-      "arn:aws:ec2:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:network-interface/*"
+      "arn:aws:ec2:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:network-interface/*"
     ]
     condition {
       test     = "StringEquals"
       variable = "ec2:Subnet"
-      values   = [for subnet_id in var.vpc_config.subnet_ids : "arn:aws:ec2:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:subnet/${subnet_id}"]
+      values   = [for subnet_id in var.vpc_config.subnet_ids : "arn:aws:ec2:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:subnet/${subnet_id}"]
     }
   }
 
@@ -174,7 +174,7 @@ data "aws_iam_policy_document" "vpc" {
     actions = [
       "ec2:CreateNetworkInterface"
     ]
-    resources = [for subnet_id in var.vpc_config.subnet_ids : "arn:aws:ec2:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:subnet/${subnet_id}"]
+    resources = [for subnet_id in var.vpc_config.subnet_ids : "arn:aws:ec2:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:subnet/${subnet_id}"]
   }
 
   statement {
@@ -183,7 +183,7 @@ data "aws_iam_policy_document" "vpc" {
     actions = [
       "ec2:CreateNetworkInterface"
     ]
-    resources = [for sg_id in var.vpc_config.security_group_ids : "arn:aws:ec2:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:security-group/${sg_id}"]
+    resources = [for sg_id in var.vpc_config.security_group_ids : "arn:aws:ec2:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:security-group/${sg_id}"]
   }
 
   statement {
@@ -202,12 +202,12 @@ data "aws_iam_policy_document" "vpc" {
       "ec2:DeleteNetworkInterface"
     ]
     resources = [
-      "arn:aws:ec2:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:network-interface/*"
+      "arn:aws:ec2:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:network-interface/*"
     ]
     condition {
       test     = "StringEquals"
       variable = "ec2:Subnet"
-      values   = [for subnet_id in var.vpc_config.subnet_ids : "arn:aws:ec2:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:subnet/${subnet_id}"]
+      values   = [for subnet_id in var.vpc_config.subnet_ids : "arn:aws:ec2:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:subnet/${subnet_id}"]
     }
   }
 }
@@ -253,7 +253,7 @@ data "aws_iam_policy_document" "sqs" {
       condition {
         test     = "StringEquals"
         variable = "kms:ViaService"
-        values   = ["sqs.${data.aws_region.current.name}.amazonaws.com"]
+        values   = ["sqs.${data.aws_region.current.id}.amazonaws.com"]
       }
     }
   }
