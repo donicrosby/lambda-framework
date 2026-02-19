@@ -158,32 +158,11 @@ data "aws_iam_policy_document" "vpc" {
     actions = [
       "ec2:CreateNetworkInterface"
     ]
-    resources = [
-      "arn:aws:ec2:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:network-interface/*"
-    ]
-    condition {
-      test     = "StringEquals"
-      variable = "ec2:Subnet"
-      values   = [for subnet_id in var.vpc_config.subnet_ids : "arn:aws:ec2:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:subnet/${subnet_id}"]
-    }
-  }
-
-  statement {
-    sid    = "VPCNetworkInterfaceSubnets"
-    effect = "Allow"
-    actions = [
-      "ec2:CreateNetworkInterface"
-    ]
-    resources = [for subnet_id in var.vpc_config.subnet_ids : "arn:aws:ec2:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:subnet/${subnet_id}"]
-  }
-
-  statement {
-    sid    = "VPCNetworkInterfaceSecurityGroups"
-    effect = "Allow"
-    actions = [
-      "ec2:CreateNetworkInterface"
-    ]
-    resources = [for sg_id in var.vpc_config.security_group_ids : "arn:aws:ec2:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:security-group/${sg_id}"]
+    resources = flatten([
+      ["arn:aws:ec2:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:network-interface/*"],
+      [for subnet_id in var.vpc_config.subnet_ids : "arn:aws:ec2:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:subnet/${subnet_id}"],
+      [for sg_id in var.vpc_config.security_group_ids : "arn:aws:ec2:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:security-group/${sg_id}"],
+    ])
   }
 
   statement {
@@ -204,11 +183,6 @@ data "aws_iam_policy_document" "vpc" {
     resources = [
       "arn:aws:ec2:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:network-interface/*"
     ]
-    condition {
-      test     = "StringEquals"
-      variable = "ec2:Subnet"
-      values   = [for subnet_id in var.vpc_config.subnet_ids : "arn:aws:ec2:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:subnet/${subnet_id}"]
-    }
   }
 }
 
