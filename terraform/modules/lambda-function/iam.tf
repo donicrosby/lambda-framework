@@ -180,11 +180,7 @@ data "aws_iam_policy_document" "vpc" {
     actions = [
       "ec2:DeleteNetworkInterface"
     ]
-    resources = flatten([
-      ["arn:aws:ec2:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:network-interface/*"],
-      [for subnet_id in var.vpc_config.subnet_ids : "arn:aws:ec2:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:subnet/${subnet_id}"],
-      [for sg_id in var.vpc_config.security_group_ids : "arn:aws:ec2:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:security-group/${sg_id}"],
-    ])
+    resources = ["*"]
   }
 }
 
