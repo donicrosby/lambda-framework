@@ -136,7 +136,7 @@ resource "aws_cloudwatch_log_group" "api_gateway" {
 # Throttling (applied to all methods via stage-level settings)
 # ==============================================================================
 
-resource "aws_api_gateway_method_settings" "all" {
+resource "aws_api_gateway_method_settings" "all" { #trivy:ignore:AVD-AWS-0190 #trivy:ignore:AVD-AWS-0002 -- Caching disabled intentionally; webhook requests must always reach Lambda
   count = var.api_gateway.enabled ? 1 : 0
 
   rest_api_id = aws_api_gateway_rest_api.this[0].id
@@ -146,8 +146,6 @@ resource "aws_api_gateway_method_settings" "all" {
   settings {
     throttling_burst_limit = var.api_gateway.throttling.burst_limit
     throttling_rate_limit  = var.api_gateway.throttling.rate_limit
-    caching_enabled        = true
-    cache_data_encrypted   = true
   }
 }
 
