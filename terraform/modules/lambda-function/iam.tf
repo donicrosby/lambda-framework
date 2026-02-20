@@ -113,7 +113,8 @@ data "aws_iam_policy_document" "secrets_manager" {
     sid    = "SecretsManagerAccess"
     effect = "Allow"
     actions = [
-      "secretsmanager:GetSecretValue"
+      "secretsmanager:GetSecretValue",
+      "secretsmanager:DescribeSecret"
     ]
     resources = local.all_secret_arns
   }
