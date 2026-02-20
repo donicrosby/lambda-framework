@@ -90,10 +90,8 @@ class EnvConfigBase:
             raise ValueError(
                 "Expected secret cache to be setup when loading secrets from AWS Secrets Manager"
             )
-        raw_secret_bytes: bytes = self._secret_cache.get_secret_binary(
-            self._aws_secret_name
-        )
-        parsed: dict[str, Any] = json.loads(raw_secret_bytes)
+        raw_secret: str = self._secret_cache.get_secret_string(self._aws_secret_name)
+        parsed: dict[str, Any] = json.loads(raw_secret)
         self._parsed_secrets = parsed
         return parsed
 
