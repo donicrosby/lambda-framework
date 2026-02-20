@@ -125,7 +125,7 @@ variable "reserved_concurrent_executions" {
 variable "architectures" {
   description = "Instruction set architecture for the Lambda function. Valid values are x86_64 or arm64."
   type        = list(string)
-  default     = ["arm64"]
+  default     = ["x86_64"]
 
   validation {
     condition     = length(var.architectures) == 1 && contains(["x86_64", "arm64"], var.architectures[0])
