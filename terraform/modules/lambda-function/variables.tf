@@ -305,30 +305,18 @@ variable "dead_letter_config" {
 }
 
 # ==============================================================================
-# API Gateway HTTP API Trigger
+# API Gateway REST API Trigger
 # ==============================================================================
 
 variable "api_gateway" {
-  description = "API Gateway HTTP API configuration for the Lambda function."
+  description = "API Gateway REST API configuration. Uses a {proxy+} catch-all so Lambda receives the full request path and handles routing itself."
   type = object({
     enabled    = bool
     stage_name = optional(string, "prod")
-    routes = optional(list(object({
-      method = string
-      path   = string
-    })), [{ method = "POST", path = "/webhook" }])
     throttling = optional(object({
       burst_limit = optional(number, 100)
       rate_limit  = optional(number, 50)
     }), {})
-    cors = optional(object({
-      allow_origins     = optional(list(string), ["*"])
-      allow_methods     = optional(list(string), ["POST", "OPTIONS"])
-      allow_headers     = optional(list(string), ["Content-Type", "X-Hub-Signature-256"])
-      expose_headers    = optional(list(string), [])
-      max_age           = optional(number, 300)
-      allow_credentials = optional(bool, false)
-    }), null)
   })
   default = {
     enabled = false

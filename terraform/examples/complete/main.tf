@@ -148,12 +148,11 @@ data "aws_subnet" "selected" {
   id       = each.value
 }
 
-resource "aws_security_group" "lambda" {
+resource "aws_security_group" "lambda" { #trivy:ignore:AVD-AWS-0104 -- Lambda needs outbound access to GitHub, AWS APIs, and other external services
   name        = "${var.function_name}-sg"
   description = "Security group for Lambda function"
   vpc_id      = data.aws_vpc.default.id
 
-  # Egress only - Lambda doesn't need ingress
   egress {
     from_port   = 0
     to_port     = 0
@@ -274,22 +273,13 @@ module "lambda" {
   # Reserved concurrency (prevent runaway costs)
   reserved_concurrent_executions = var.environment == "prod" ? 100 : 10
 
-  # API Gateway HTTP API trigger
+  # API Gateway REST API trigger ({proxy+} catch-all — Lambda handles routing)
   api_gateway = {
     enabled    = true
     stage_name = var.environment
-    routes = [
-      { method = "POST", path = "/webhook" },
-      { method = "POST", path = "/webhook/github" }
-    ]
     throttling = {
       burst_limit = var.environment == "prod" ? 500 : 50
       rate_limit  = var.environment == "prod" ? 200 : 20
-    }
-    cors = {
-      allow_origins = var.environment == "prod" ? ["https://github.com"] : ["*"]
-      allow_methods = ["POST", "OPTIONS"]
-      allow_headers = ["Content-Type", "X-Hub-Signature-256", "X-GitHub-Event"]
     }
   }
 
@@ -332,8 +322,8 @@ output "api_gateway_url" {
 }
 
 output "webhook_endpoint" {
-  description = "Full webhook endpoint URL"
-  value       = module.lambda.api_gateway_url != null ? "${module.lambda.api_gateway_url}/webhook" : null
+  description = "Full webhook endpoint URL (append desired path, e.g. /webhook)"
+  value       = module.lambda.api_gateway_url
 }
 
 output "sqs_queue_url" {

@@ -7,7 +7,7 @@ This Terraform/OpenTofu module deploys container-based AWS Lambda functions with
 - **Container-based Lambda**: Deploy Lambda functions from pre-built ECR container images
 - **CIS Benchmark Compliance**: Implements Lambda.1, Lambda.3, Lambda.5, Lambda.6, and Lambda.7 controls
 - **Least-Privilege IAM**: Scoped permissions for CloudWatch Logs, Secrets Manager, VPC, X-Ray
-- **Multiple Triggers**: API Gateway HTTP API, SQS, and EventBridge
+- **Multiple Triggers**: API Gateway REST API (proxy pass-through), SQS, and EventBridge
 - **Optional VPC Support**: Deploy Lambda in VPC for private resource access
 - **Secrets Manager Integration**: Create or reference existing secrets
 - **KMS Encryption**: Optional encryption for logs, secrets, and SQS
@@ -63,9 +63,6 @@ module "lambda" {
   api_gateway = {
     enabled    = true
     stage_name = "prod"
-    routes = [
-      { method = "POST", path = "/webhook" }
-    ]
     throttling = {
       burst_limit = 100
       rate_limit  = 50
@@ -74,7 +71,7 @@ module "lambda" {
 }
 
 output "webhook_url" {
-  value = "${module.lambda.api_gateway_url}/webhook"
+  value = module.lambda.api_gateway_url
 }
 ```
 

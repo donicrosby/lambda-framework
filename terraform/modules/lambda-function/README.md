@@ -24,10 +24,15 @@ No modules.
 
 | Name | Type |
 |------|------|
-| [aws_apigatewayv2_api.http](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/apigatewayv2_api) | resource |
-| [aws_apigatewayv2_integration.lambda](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/apigatewayv2_integration) | resource |
-| [aws_apigatewayv2_route.routes](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/apigatewayv2_route) | resource |
-| [aws_apigatewayv2_stage.default](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/apigatewayv2_stage) | resource |
+| [aws_api_gateway_deployment.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/api_gateway_deployment) | resource |
+| [aws_api_gateway_integration.proxy](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/api_gateway_integration) | resource |
+| [aws_api_gateway_integration.root](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/api_gateway_integration) | resource |
+| [aws_api_gateway_method.proxy](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/api_gateway_method) | resource |
+| [aws_api_gateway_method.root](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/api_gateway_method) | resource |
+| [aws_api_gateway_method_settings.all](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/api_gateway_method_settings) | resource |
+| [aws_api_gateway_resource.proxy](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/api_gateway_resource) | resource |
+| [aws_api_gateway_rest_api.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/api_gateway_rest_api) | resource |
+| [aws_api_gateway_stage.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/api_gateway_stage) | resource |
 | [aws_cloudwatch_event_rule.trigger](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/cloudwatch_event_rule) | resource |
 | [aws_cloudwatch_event_target.lambda](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/cloudwatch_event_target) | resource |
 | [aws_cloudwatch_log_group.api_gateway](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/cloudwatch_log_group) | resource |
@@ -69,7 +74,7 @@ No modules.
 |------|-------------|------|---------|:--------:|
 | <a name="input_additional_iam_policies"></a> [additional\_iam\_policies](#input\_additional\_iam\_policies) | List of additional IAM policy ARNs to attach to the Lambda execution role. Only used when creating a new role. | `list(string)` | `[]` | no |
 | <a name="input_additional_inline_policies"></a> [additional\_inline\_policies](#input\_additional\_inline\_policies) | Map of additional inline IAM policies to attach to the Lambda execution role. Key is policy name, value is policy JSON. | `map(string)` | `{}` | no |
-| <a name="input_api_gateway"></a> [api\_gateway](#input\_api\_gateway) | API Gateway HTTP API configuration for the Lambda function. | <pre>object({<br/>    enabled    = bool<br/>    stage_name = optional(string, "prod")<br/>    routes = optional(list(object({<br/>      method = string<br/>      path   = string<br/>    })), [{ method = "POST", path = "/webhook" }])<br/>    throttling = optional(object({<br/>      burst_limit = optional(number, 100)<br/>      rate_limit  = optional(number, 50)<br/>    }), {})<br/>    cors = optional(object({<br/>      allow_origins     = optional(list(string), ["*"])<br/>      allow_methods     = optional(list(string), ["POST", "OPTIONS"])<br/>      allow_headers     = optional(list(string), ["Content-Type", "X-Hub-Signature-256"])<br/>      expose_headers    = optional(list(string), [])<br/>      max_age           = optional(number, 300)<br/>      allow_credentials = optional(bool, false)<br/>    }), null)<br/>  })</pre> | <pre>{<br/>  "enabled": false<br/>}</pre> | no |
+| <a name="input_api_gateway"></a> [api\_gateway](#input\_api\_gateway) | API Gateway REST API configuration. Uses a {proxy+} catch-all so Lambda receives the full request path and handles routing itself. | <pre>object({<br/>    enabled    = bool<br/>    stage_name = optional(string, "prod")<br/>    throttling = optional(object({<br/>      burst_limit = optional(number, 100)<br/>      rate_limit  = optional(number, 50)<br/>    }), {})<br/>  })</pre> | <pre>{<br/>  "enabled": false<br/>}</pre> | no |
 | <a name="input_application_log_level"></a> [application\_log\_level](#input\_application\_log\_level) | Application log level for structured logging. Valid values are TRACE, DEBUG, INFO, WARN, ERROR, FATAL. | `string` | `"INFO"` | no |
 | <a name="input_architectures"></a> [architectures](#input\_architectures) | Instruction set architecture for the Lambda function. Valid values are x86\_64 or arm64. | `list(string)` | <pre>[<br/>  "x86_64"<br/>]</pre> | no |
 | <a name="input_dead_letter_config"></a> [dead\_letter\_config](#input\_dead\_letter\_config) | Dead letter queue configuration for failed invocations. | <pre>object({<br/>    target_arn = string<br/>  })</pre> | `null` | no |
@@ -103,10 +108,10 @@ No modules.
 | Name | Description |
 |------|-------------|
 | <a name="output_all_secret_arns"></a> [all\_secret\_arns](#output\_all\_secret\_arns) | All secret ARNs the Lambda function has access to (created + existing) |
-| <a name="output_api_gateway_execution_arn"></a> [api\_gateway\_execution\_arn](#output\_api\_gateway\_execution\_arn) | Execution ARN of the API Gateway HTTP API |
-| <a name="output_api_gateway_id"></a> [api\_gateway\_id](#output\_api\_gateway\_id) | ID of the API Gateway HTTP API |
+| <a name="output_api_gateway_execution_arn"></a> [api\_gateway\_execution\_arn](#output\_api\_gateway\_execution\_arn) | Execution ARN of the API Gateway REST API |
+| <a name="output_api_gateway_id"></a> [api\_gateway\_id](#output\_api\_gateway\_id) | ID of the API Gateway REST API |
 | <a name="output_api_gateway_stage_name"></a> [api\_gateway\_stage\_name](#output\_api\_gateway\_stage\_name) | Name of the API Gateway stage |
-| <a name="output_api_gateway_url"></a> [api\_gateway\_url](#output\_api\_gateway\_url) | URL of the API Gateway HTTP API endpoint |
+| <a name="output_api_gateway_url"></a> [api\_gateway\_url](#output\_api\_gateway\_url) | Invoke URL of the API Gateway REST API stage |
 | <a name="output_created_secret_arns"></a> [created\_secret\_arns](#output\_created\_secret\_arns) | ARN of the secret created by this module |
 | <a name="output_created_secret_version_id"></a> [created\_secret\_version\_id](#output\_created\_secret\_version\_id) | Version ID of the secret value created by this module |
 | <a name="output_eventbridge_rule_arn"></a> [eventbridge\_rule\_arn](#output\_eventbridge\_rule\_arn) | ARN of the EventBridge rule |

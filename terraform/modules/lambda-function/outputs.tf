@@ -64,23 +64,23 @@ output "log_group_arn" {
 # ==============================================================================
 
 output "api_gateway_id" {
-  description = "ID of the API Gateway HTTP API"
-  value       = var.api_gateway.enabled ? aws_apigatewayv2_api.http[0].id : null
+  description = "ID of the API Gateway REST API"
+  value       = var.api_gateway.enabled ? aws_api_gateway_rest_api.this[0].id : null
 }
 
 output "api_gateway_url" {
-  description = "URL of the API Gateway HTTP API endpoint"
-  value       = var.api_gateway.enabled ? aws_apigatewayv2_stage.default[0].invoke_url : null
+  description = "Invoke URL of the API Gateway REST API stage"
+  value       = var.api_gateway.enabled ? aws_api_gateway_stage.this[0].invoke_url : null
 }
 
 output "api_gateway_execution_arn" {
-  description = "Execution ARN of the API Gateway HTTP API"
-  value       = var.api_gateway.enabled ? aws_apigatewayv2_api.http[0].execution_arn : null
+  description = "Execution ARN of the API Gateway REST API"
+  value       = var.api_gateway.enabled ? aws_api_gateway_rest_api.this[0].execution_arn : null
 }
 
 output "api_gateway_stage_name" {
   description = "Name of the API Gateway stage"
-  value       = var.api_gateway.enabled ? aws_apigatewayv2_stage.default[0].name : null
+  value       = var.api_gateway.enabled ? aws_api_gateway_stage.this[0].stage_name : null
 }
 
 # ==============================================================================
