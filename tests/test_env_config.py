@@ -161,14 +161,14 @@ class TestGetSecret:
         # Mock the secret cache response
         secrets_data = {"MY_SECRET": "aws-secret-value", "OTHER_SECRET": "other-value"}
         assert config._secret_cache is not None
-        config._secret_cache.get_secret_binary = MagicMock(
-            return_value=json.dumps(secrets_data).encode()
+        config._secret_cache.get_secret_string = MagicMock(
+            return_value=json.dumps(secrets_data)
         )
 
         result = config.get_secret("MY_SECRET")
 
         assert result == "aws-secret-value"
-        config._secret_cache.get_secret_binary.assert_called_once_with("my-aws-secret")
+        config._secret_cache.get_secret_string.assert_called_once_with("my-aws-secret")
 
     @patch("lambda_framework.env_config.botocore.session.get_session")
     def test_get_secret_aws_mode_raises_when_secret_missing(
@@ -187,8 +187,8 @@ class TestGetSecret:
         # Mock the secret cache response without the requested secret
         secrets_data = {"OTHER_SECRET": "other-value"}
         assert config._secret_cache is not None
-        config._secret_cache.get_secret_binary = MagicMock(
-            return_value=json.dumps(secrets_data).encode()
+        config._secret_cache.get_secret_string = MagicMock(
+            return_value=json.dumps(secrets_data)
         )
 
         with pytest.raises(
@@ -214,8 +214,8 @@ class TestGetSecret:
         # Mock the secret cache response with a numeric value
         secrets_data = {"NUMERIC_SECRET": 12345}
         assert config._secret_cache is not None
-        config._secret_cache.get_secret_binary = MagicMock(
-            return_value=json.dumps(secrets_data).encode()
+        config._secret_cache.get_secret_string = MagicMock(
+            return_value=json.dumps(secrets_data)
         )
 
         result = config.get_secret("NUMERIC_SECRET")
