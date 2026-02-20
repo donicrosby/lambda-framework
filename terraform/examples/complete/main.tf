@@ -148,21 +148,30 @@ data "aws_subnet" "selected" {
   id       = each.value
 }
 
-resource "aws_security_group" "lambda" { #trivy:ignore:AVD-AWS-0104 -- Lambda needs outbound access to GitHub, AWS APIs, and other external services
+resource "aws_security_group" "lambda" {
   name        = "${var.function_name}-sg"
   description = "Security group for Lambda function"
   vpc_id      = data.aws_vpc.default.id
 
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "Allow all outbound traffic"
-  }
-
   tags = {
     Name        = "${var.function_name}-sg"
+    Environment = var.environment
+  }
+
+  # Do NOT add inline ingress/egress blocks here — they conflict with
+  # standalone aws_vpc_security_group_*_rule resources and cause a
+  # perpetual destroy/recreate loop during refresh.
+}
+
+#trivy:ignore:AVD-AWS-0104 -- Lambda needs outbound access to GitHub, AWS APIs, and other external services
+resource "aws_vpc_security_group_egress_rule" "lambda_all_outbound" {
+  security_group_id = aws_security_group.lambda.id
+  description       = "Allow all outbound traffic"
+  ip_protocol       = "-1"
+  cidr_ipv4         = "0.0.0.0/0"
+
+  tags = {
+    Name        = "${var.function_name}-egress-all"
     Environment = var.environment
   }
 }
