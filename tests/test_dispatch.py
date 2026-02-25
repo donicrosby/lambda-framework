@@ -308,3 +308,82 @@ class TestAsyncHandlerBridging:
 
         assert result == "direct"
         http.assert_called_once()
+
+
+# ===========================================================================
+# error_notifier integration tests
+# ===========================================================================
+
+
+class TestErrorNotifier:
+    """Verify the error_notifier parameter in create_dispatcher."""
+
+    def test_notifier_called_on_handler_error(self):
+        """When a handler raises, error_notifier.send_error is invoked."""
+        notifier = MagicMock()
+        failing_eb = MagicMock(side_effect=RuntimeError("handler boom"))
+        ctx = MagicMock()
+
+        handler = create_dispatcher(
+            eventbridge_handler=failing_eb,
+            error_notifier=notifier,
+        )
+
+        with pytest.raises(RuntimeError, match="handler boom"):
+            handler(EVENTBRIDGE_EVENT, ctx)
+
+        notifier.send_error.assert_called_once()
+        call_kwargs = notifier.send_error.call_args
+        assert isinstance(call_kwargs[0][0], RuntimeError)
+        assert call_kwargs[1]["context"] is ctx
+        assert call_kwargs[1]["event"] is EVENTBRIDGE_EVENT
+
+    def test_original_exception_still_raised(self):
+        """The original exception propagates even when a notifier is set."""
+        notifier = MagicMock()
+        handler = create_dispatcher(error_notifier=notifier)
+
+        with pytest.raises(ValueError, match="Unrecognised event type"):
+            handler({"unknown": "event"}, None)
+
+    def test_notifier_not_called_on_success(self):
+        """No notification when the handler succeeds."""
+        notifier = MagicMock()
+        http = MagicMock(return_value={"statusCode": 200})
+        handler = create_dispatcher(http_handler=http, error_notifier=notifier)
+
+        result = handler(API_GATEWAY_V1_EVENT, None)
+
+        assert result == {"statusCode": 200}
+        notifier.send_error.assert_not_called()
+
+    def test_notifier_failure_does_not_mask_original(self):
+        """If send_error itself raises, the original exception still propagates."""
+        notifier = MagicMock()
+        notifier.send_error.side_effect = ConnectionError("Slack unreachable")
+        failing_sqs = MagicMock(side_effect=ValueError("sqs fail"))
+
+        handler = create_dispatcher(
+            sqs_handler=failing_sqs,
+            error_notifier=notifier,
+        )
+
+        with pytest.raises(ValueError, match="sqs fail"):
+            handler(SQS_EVENT, None)
+
+    def test_notifier_with_missing_handler_error(self):
+        """Notifier fires on ValueError for missing handler registration."""
+        notifier = MagicMock()
+        handler = create_dispatcher(error_notifier=notifier)
+
+        with pytest.raises(ValueError, match="no http_handler"):
+            handler(API_GATEWAY_V1_EVENT, None)
+
+        notifier.send_error.assert_called_once()
+
+    def test_no_notifier_default(self):
+        """Without error_notifier, errors propagate as before."""
+        handler = create_dispatcher()
+
+        with pytest.raises(ValueError, match="Unrecognised event type"):
+            handler({"nope": True}, None)

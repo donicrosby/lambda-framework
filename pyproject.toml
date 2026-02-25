@@ -29,6 +29,7 @@ dev = [
     "ruff>=0.14.10",
     "types-redis>=4.6.0.20241004",
     "pottery-semaphore",
+    "slack_sdk>=3.27.0",
 ]
 
 [project.optional-dependencies]
@@ -43,6 +44,9 @@ github = [
     "pottery>=3.0.1",
     "pottery-semaphore",
     "redis>=7.0.0",
+]
+slack = [
+    "slack_sdk>=3.27.0",
 ]
 
 [tool.ruff]

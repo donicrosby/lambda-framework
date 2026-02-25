@@ -45,3 +45,11 @@ try:
     __all__.append("LambdaThrottler")
 except ImportError:
     LambdaThrottler = None  # type: ignore[assignment,misc]
+
+# Optional slack module (requires slack_sdk package)
+try:
+    from .slack import SlackNotifier
+
+    __all__.append("SlackNotifier")
+except ImportError:
+    SlackNotifier = None  # type: ignore[assignment,misc]

@@ -44,11 +44,46 @@ def _invoke(handler: EventHandler, event: dict[str, Any], context: Any) -> Any:
     return result
 
 
+def _dispatch(
+    event: dict[str, Any],
+    context: Any,
+    *,
+    http_handler: EventHandler | None,
+    eventbridge_handler: EventHandler | None,
+    sqs_handler: EventHandler | None,
+) -> Any:
+    """Route *event* to the matching sub-handler."""
+    if _is_api_gateway_event(event):
+        if http_handler is None:
+            raise ValueError(
+                "Received API Gateway event but no http_handler is registered"
+            )
+        logger.debug("Dispatching to http_handler")
+        return http_handler(event, context)
+
+    if _is_eventbridge_event(event):
+        if eventbridge_handler is None:
+            raise ValueError(
+                "Received EventBridge event but no eventbridge_handler is registered"
+            )
+        logger.debug("Dispatching to eventbridge_handler")
+        return _invoke(eventbridge_handler, event, context)
+
+    if _is_sqs_event(event):
+        if sqs_handler is None:
+            raise ValueError("Received SQS event but no sqs_handler is registered")
+        logger.debug("Dispatching to sqs_handler")
+        return _invoke(sqs_handler, event, context)
+
+    raise ValueError(f"Unrecognised event type, top-level keys: {sorted(event.keys())}")
+
+
 def create_dispatcher(
     *,
     http_handler: EventHandler | None = None,
     eventbridge_handler: EventHandler | None = None,
     sqs_handler: EventHandler | None = None,
+    error_notifier: Any | None = None,
 ) -> EventHandler:
     """Build a Lambda handler that routes events to the appropriate sub-handler.
 
@@ -60,6 +95,10 @@ def create_dispatcher(
         http_handler: Handler for API Gateway proxy events (e.g. Mangum).
         eventbridge_handler: Handler for EventBridge events (sync or async).
         sqs_handler: Handler for SQS batch events (sync or async).
+        error_notifier: Optional object with a ``send_error(exc, *, context,
+            event)`` method (e.g. :class:`~lambda_framework.slack.SlackNotifier`).
+            When provided, unhandled exceptions from any sub-handler are
+            reported via this notifier before being re-raised.
 
     Returns:
         A Lambda-compatible handler ``(event, context) -> response``.
@@ -71,30 +110,20 @@ def create_dispatcher(
     """
 
     def handler(event: dict[str, Any], context: Any) -> Any:
-        if _is_api_gateway_event(event):
-            if http_handler is None:
-                raise ValueError(
-                    "Received API Gateway event but no http_handler is registered"
-                )
-            logger.debug("Dispatching to http_handler")
-            return http_handler(event, context)
-
-        if _is_eventbridge_event(event):
-            if eventbridge_handler is None:
-                raise ValueError(
-                    "Received EventBridge event but no eventbridge_handler is registered"
-                )
-            logger.debug("Dispatching to eventbridge_handler")
-            return _invoke(eventbridge_handler, event, context)
-
-        if _is_sqs_event(event):
-            if sqs_handler is None:
-                raise ValueError("Received SQS event but no sqs_handler is registered")
-            logger.debug("Dispatching to sqs_handler")
-            return _invoke(sqs_handler, event, context)
-
-        raise ValueError(
-            f"Unrecognised event type, top-level keys: {sorted(event.keys())}"
-        )
+        try:
+            return _dispatch(
+                event,
+                context,
+                http_handler=http_handler,
+                eventbridge_handler=eventbridge_handler,
+                sqs_handler=sqs_handler,
+            )
+        except Exception as exc:
+            if error_notifier is not None:
+                try:
+                    error_notifier.send_error(exc, context=context, event=event)
+                except Exception:
+                    logger.exception("error_notifier.send_error failed")
+            raise
 
     return handler
