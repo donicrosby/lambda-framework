@@ -36,6 +36,19 @@ def _is_sqs_event(event: dict[str, Any]) -> bool:
     return records[0].get("eventSource") == "aws:sqs"
 
 
+def _ensure_event_loop() -> None:
+    """Guarantee an asyncio event loop is attached to the current thread.
+
+    Python 3.10+ raises ``RuntimeError`` from ``asyncio.get_event_loop()``
+    when no loop has been set.  Libraries such as Mangum call that function
+    internally, so we must ensure a loop exists before handing off control.
+    """
+    try:
+        asyncio.get_event_loop()
+    except RuntimeError:
+        asyncio.set_event_loop(asyncio.new_event_loop())
+
+
 def _invoke(handler: EventHandler, event: dict[str, Any], context: Any) -> Any:
     """Call *handler* and bridge async results to sync for the Lambda runtime."""
     result = handler(event, context)
@@ -59,6 +72,7 @@ def _dispatch(
                 "Received API Gateway event but no http_handler is registered"
             )
         logger.debug("Dispatching to http_handler")
+        _ensure_event_loop()
         return http_handler(event, context)
 
     if _is_eventbridge_event(event):

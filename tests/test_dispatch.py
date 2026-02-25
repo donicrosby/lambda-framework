@@ -1,10 +1,12 @@
 """Tests for the Lambda event dispatcher."""
 
+import asyncio
 from unittest.mock import MagicMock
 
 import pytest
 
 from lambda_framework.dispatch import (
+    _ensure_event_loop,
     _is_api_gateway_event,
     _is_eventbridge_event,
     _is_sqs_event,
@@ -387,3 +389,42 @@ class TestErrorNotifier:
 
         with pytest.raises(ValueError, match="Unrecognised event type"):
             handler({"nope": True}, None)
+
+
+# ===========================================================================
+# _ensure_event_loop tests
+# ===========================================================================
+
+
+class TestEnsureEventLoop:
+    """Verify _ensure_event_loop creates a loop when none exists (Python 3.10+)."""
+
+    def test_creates_loop_when_none_set(self):
+        """A new loop is created and set when the thread has no current loop."""
+        asyncio.set_event_loop(None)
+        _ensure_event_loop()
+        loop = asyncio.get_event_loop()
+        assert loop is not None
+        assert not loop.is_closed()
+        loop.close()
+
+    def test_preserves_existing_loop(self):
+        """An already-set loop is left untouched."""
+        existing = asyncio.new_event_loop()
+        asyncio.set_event_loop(existing)
+        try:
+            _ensure_event_loop()
+            assert asyncio.get_event_loop() is existing
+        finally:
+            existing.close()
+
+    def test_http_dispatch_works_without_preexisting_loop(self):
+        """The dispatcher can invoke http_handler even with no event loop set."""
+        asyncio.set_event_loop(None)
+        http = MagicMock(return_value={"statusCode": 200})
+        handler = create_dispatcher(http_handler=http)
+
+        result = handler(API_GATEWAY_V1_EVENT, None)
+
+        assert result == {"statusCode": 200}
+        http.assert_called_once()
