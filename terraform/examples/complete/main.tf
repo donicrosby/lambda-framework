@@ -303,12 +303,32 @@ module "lambda" {
     kms_key_id                 = aws_kms_key.lambda.id
   }
 
-  # EventBridge trigger (scheduled tasks)
+  # EventBridge trigger with custom bus and webhook-to-EventBridge forwarding.
+  # The Lambda validates incoming GitHub webhooks via API Gateway, then
+  # publishes them to the custom event bus using PutEvents.  An EventBridge
+  # rule on the same bus re-invokes this Lambda for asynchronous processing.
   eventbridge_trigger = {
-    enabled     = true
-    schedule    = "rate(5 minutes)"
-    description = "Scheduled invocation for health checks"
+    enabled                 = true
+    event_pattern           = jsonencode({ "source" : ["webhook.github"] })
+    description             = "Process GitHub webhook events from the custom bus"
+    create_event_bus        = true
+    enable_put_events       = true
+    enable_schema_discovery = true
+    archive_retention_days  = 30
   }
+
+  # -------------------------------------------------------------------
+  # Alternative: Partner Event Source (uncomment to use instead)
+  # -------------------------------------------------------------------
+  # eventbridge_trigger = {
+  #   enabled                   = true
+  #   event_pattern             = jsonencode({ "source" : [{ "prefix" : "aws.partner/github.com" }] })
+  #   description               = "GitHub partner event source trigger"
+  #   create_event_bus          = true
+  #   partner_event_source_name = "aws.partner/github.com/<org-id>/<repo>"
+  #   enable_schema_discovery   = true
+  #   archive_retention_days    = 30
+  # }
 }
 
 # ==============================================================================
@@ -358,4 +378,14 @@ output "log_group_name" {
 output "secret_arns" {
   description = "ARNs of secrets the Lambda has access to"
   value       = module.lambda.all_secret_arns
+}
+
+output "event_bus_arn" {
+  description = "ARN of the custom EventBridge event bus"
+  value       = module.lambda.event_bus_arn
+}
+
+output "event_bus_name" {
+  description = "Name of the EventBridge event bus"
+  value       = module.lambda.event_bus_name
 }

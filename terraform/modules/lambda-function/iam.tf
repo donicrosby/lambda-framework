@@ -241,6 +241,33 @@ resource "aws_iam_role_policy" "sqs" {
 }
 
 # ==============================================================================
+# EventBridge PutEvents Policy (for webhook-to-EventBridge forwarding)
+# ==============================================================================
+
+data "aws_iam_policy_document" "eventbridge_put_events" {
+  count = local.create_role && var.eventbridge_trigger.enable_put_events ? 1 : 0
+
+  statement {
+    sid    = "EventBridgePutEvents"
+    effect = "Allow"
+    actions = [
+      "events:PutEvents"
+    ]
+    resources = [
+      local.create_event_bus ? local.event_bus_arn : "arn:aws:events:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:event-bus/${var.eventbridge_trigger.event_bus_name}"
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "eventbridge_put_events" {
+  count = local.create_role && var.eventbridge_trigger.enable_put_events ? 1 : 0
+
+  name   = "eventbridge-put-events"
+  role   = aws_iam_role.lambda[0].id
+  policy = data.aws_iam_policy_document.eventbridge_put_events[0].json
+}
+
+# ==============================================================================
 # Dead Letter Queue Policy
 # ==============================================================================
 

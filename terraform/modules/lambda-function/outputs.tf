@@ -121,6 +121,16 @@ output "eventbridge_rule_name" {
   value       = var.eventbridge_trigger.enabled ? aws_cloudwatch_event_rule.trigger[0].name : null
 }
 
+output "event_bus_arn" {
+  description = "ARN of the custom EventBridge event bus (null if using default bus)"
+  value       = local.event_bus_arn
+}
+
+output "event_bus_name" {
+  description = "Name of the EventBridge event bus used by this module"
+  value       = local.event_bus_name
+}
+
 # ==============================================================================
 # Secrets Manager Outputs
 # ==============================================================================

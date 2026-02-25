@@ -359,13 +359,18 @@ variable "sqs_trigger" {
 # ==============================================================================
 
 variable "eventbridge_trigger" {
-  description = "EventBridge trigger configuration for the Lambda function."
+  description = "EventBridge trigger configuration for the Lambda function. Supports custom event buses, partner event sources (e.g. GitHub), and PutEvents for webhook-to-EventBridge forwarding."
   type = object({
-    enabled        = bool
-    schedule       = optional(string)
-    event_pattern  = optional(string)
-    description    = optional(string, "EventBridge rule for Lambda trigger")
-    event_bus_name = optional(string, "default")
+    enabled                   = bool
+    schedule                  = optional(string)
+    event_pattern             = optional(string)
+    description               = optional(string, "EventBridge rule for Lambda trigger")
+    event_bus_name            = optional(string, "default")
+    create_event_bus          = optional(bool, false)
+    partner_event_source_name = optional(string)
+    enable_put_events         = optional(bool, false)
+    enable_schema_discovery   = optional(bool, false)
+    archive_retention_days    = optional(number)
   })
   default = {
     enabled = false
@@ -374,5 +379,15 @@ variable "eventbridge_trigger" {
   validation {
     condition     = !var.eventbridge_trigger.enabled || var.eventbridge_trigger.schedule != null || var.eventbridge_trigger.event_pattern != null
     error_message = "EventBridge trigger requires either a schedule expression or event pattern."
+  }
+
+  validation {
+    condition     = var.eventbridge_trigger.partner_event_source_name == null || var.eventbridge_trigger.create_event_bus
+    error_message = "partner_event_source_name requires create_event_bus = true."
+  }
+
+  validation {
+    condition     = !var.eventbridge_trigger.enable_schema_discovery || var.eventbridge_trigger.create_event_bus
+    error_message = "enable_schema_discovery requires create_event_bus = true."
   }
 }

@@ -4,6 +4,7 @@ Provides a base class for managing environment-specific configuration,
 including secrets retrieval from AWS Secrets Manager or local environment variables.
 """
 
+from .dispatch import create_dispatcher
 from .env_config import EnvConfigBase, SecretCacheConfig
 from .webhook import (
     GithubWebhookParser,
@@ -17,7 +18,16 @@ __all__ = [
     "GithubWebhookRouter",
     "GithubWebhookValidator",
     "GithubWebhookParser",
+    "create_dispatcher",
 ]
+
+# Optional eventbridge module (requires aioboto3 package)
+try:
+    from .eventbridge import EventBridgePublisher
+
+    __all__.append("EventBridgePublisher")
+except ImportError:
+    EventBridgePublisher = None  # type: ignore[assignment,misc]
 
 # Optional cache module (requires redis package)
 try:
