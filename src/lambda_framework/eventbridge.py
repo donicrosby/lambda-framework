@@ -65,14 +65,15 @@ class EventBridgePublisher:
         self._source = source
         self._session = session or aioboto3.Session()
         self._client: Any | None = None
-        self._owns_client = False
+        self._client_ctx: Any | None = None
+        self._in_context_manager = False
 
     async def __aenter__(self) -> EventBridgePublisher:
         """Enter the async context manager, creating a reusable client."""
         ctx = self._session.client("events")
         self._client = await ctx.__aenter__()
-        self._owns_client = True
         self._client_ctx = ctx
+        self._in_context_manager = True
         return self
 
     async def __aexit__(
@@ -82,10 +83,19 @@ class EventBridgePublisher:
         exc_tb: TracebackType | None,
     ) -> None:
         """Exit the async context manager, closing the client."""
-        if self._owns_client and hasattr(self, "_client_ctx"):
-            await self._client_ctx.__aexit__(exc_type, exc_val, exc_tb)
+        self._in_context_manager = False
+        await self.close()
+
+    async def close(self) -> None:
+        """Close the underlying ``aioboto3`` client and its connection pool.
+
+        Safe to call multiple times or when no client has been created.
+
+        """
+        if self._client_ctx is not None:
+            await self._client_ctx.__aexit__(None, None, None)
             self._client = None
-            self._owns_client = False
+            self._client_ctx = None
 
     async def _get_client(self) -> Any:
         """Return the active client, creating a one-shot client if needed."""
@@ -95,7 +105,6 @@ class EventBridgePublisher:
         client = await ctx.__aenter__()
         self._client = client
         self._client_ctx = ctx
-        self._owns_client = True
         return client
 
     async def put_event(
@@ -157,22 +166,28 @@ class EventBridgePublisher:
             entry.setdefault("Source", self._source)
 
         client = await self._get_client()
-        response = await client.put_events(Entries=entries)
+        try:
+            response = await client.put_events(Entries=entries)
 
-        failed = response.get("FailedEntryCount", 0)
-        if failed:
-            failed_entries = [
-                e for e in response.get("Entries", []) if e.get("ErrorCode")
-            ]
-            logger.error(
-                "EventBridge PutEvents failed for %d entries: %s",
-                failed,
-                failed_entries,
-            )
-            raise RuntimeError(
-                f"EventBridge PutEvents failed for {failed} of {len(entries)} entries: "
-                f"{failed_entries}"
-            )
+            failed = response.get("FailedEntryCount", 0)
+            if failed:
+                failed_entries = [
+                    e for e in response.get("Entries", []) if e.get("ErrorCode")
+                ]
+                logger.error(
+                    "EventBridge PutEvents failed for %d entries: %s",
+                    failed,
+                    failed_entries,
+                )
+                raise RuntimeError(
+                    f"EventBridge PutEvents failed for {failed} of {len(entries)} entries: "
+                    f"{failed_entries}"
+                )
 
-        logger.debug("Published %d event(s) to %s", len(entries), self._event_bus_name)
-        return response
+            logger.debug(
+                "Published %d event(s) to %s", len(entries), self._event_bus_name
+            )
+            return response
+        finally:
+            if not self._in_context_manager:
+                await self.close()

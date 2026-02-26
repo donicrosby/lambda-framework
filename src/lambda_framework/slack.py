@@ -163,6 +163,7 @@ class SlackNotifier:
         self._icon_emoji = icon_emoji
         self._client: WebClient | None = None
         self._async_client: AsyncWebClient | None = None
+        self._in_context_manager = False
 
     def _get_client(self) -> WebClient:
         """Return the sync ``WebClient``, creating it on first access."""
@@ -184,6 +185,35 @@ class SlackNotifier:
         if self._icon_emoji:
             kwargs["icon_emoji"] = self._icon_emoji
         return kwargs
+
+    # -- lifecycle management ----------------------------------------------
+
+    async def __aenter__(self) -> SlackNotifier:
+        """Enter the async context manager for client reuse without leaks."""
+        self._in_context_manager = True
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: type[BaseException] | None,
+    ) -> None:
+        """Exit the async context manager, closing the async client session."""
+        self._in_context_manager = False
+        await self.async_close()
+
+    async def async_close(self) -> None:
+        """Close the underlying ``aiohttp.ClientSession`` held by the async client.
+
+        Safe to call multiple times or when no async client has been created.
+
+        """
+        if self._async_client is not None:
+            session = getattr(self._async_client, "session", None)
+            if session is not None and not session.closed:
+                await session.close()
+            self._async_client = None
 
     # -- public sync API ---------------------------------------------------
 
@@ -252,7 +282,11 @@ class SlackNotifier:
         kwargs["text"] = text
         if blocks:
             kwargs["blocks"] = blocks
-        await client.chat_postMessage(**kwargs)
+        try:
+            await client.chat_postMessage(**kwargs)
+        finally:
+            if not self._in_context_manager:
+                await self.async_close()
 
     async def async_send_error(
         self,

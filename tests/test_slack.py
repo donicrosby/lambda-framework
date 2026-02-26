@@ -168,6 +168,7 @@ class TestSlackNotifierInit:
         notifier = SlackNotifier(token="xoxb-test", channel="#test")
         assert notifier._client is None
         assert notifier._async_client is None
+        assert notifier._in_context_manager is False
 
     def test_get_client_creates_webclient(self):
         """_get_client creates a WebClient on first call."""
@@ -182,6 +183,92 @@ class TestSlackNotifierInit:
         client = notifier._get_async_client()
         assert client is not None
         assert notifier._get_async_client() is client
+
+
+# ===========================================================================
+# Lifecycle management (async close / context manager)
+# ===========================================================================
+
+
+class TestSlackNotifierLifecycle:
+    """Verify async context manager and async_close behaviour."""
+
+    async def test_async_close_closes_session(self):
+        """async_close() closes the underlying aiohttp session."""
+        notifier = SlackNotifier(token="xoxb-test", channel="#test")
+        mock_session = AsyncMock()
+        mock_session.closed = False
+        mock_client = MagicMock()
+        mock_client.session = mock_session
+        notifier._async_client = mock_client
+
+        await notifier.async_close()
+
+        mock_session.close.assert_awaited_once()
+        assert notifier._async_client is None
+
+    async def test_async_close_is_idempotent(self):
+        """Calling async_close() when no client exists is a no-op."""
+        notifier = SlackNotifier(token="xoxb-test", channel="#test")
+        await notifier.async_close()
+        assert notifier._async_client is None
+
+    async def test_async_close_skips_already_closed_session(self):
+        """async_close() does not close an already-closed session."""
+        notifier = SlackNotifier(token="xoxb-test", channel="#test")
+        mock_session = AsyncMock()
+        mock_session.closed = True
+        mock_client = MagicMock()
+        mock_client.session = mock_session
+        notifier._async_client = mock_client
+
+        await notifier.async_close()
+
+        mock_session.close.assert_not_awaited()
+        assert notifier._async_client is None
+
+    async def test_context_manager_sets_flag(self):
+        """Entering context manager sets _in_context_manager flag."""
+        notifier = SlackNotifier(token="xoxb-test", channel="#test")
+        async with notifier as n:
+            assert n is notifier
+            assert notifier._in_context_manager is True
+        assert notifier._in_context_manager is False
+
+    async def test_context_manager_closes_on_exit(self):
+        """Exiting context manager calls async_close."""
+        notifier = SlackNotifier(token="xoxb-test", channel="#test")
+        with patch.object(
+            notifier, "async_close", new_callable=AsyncMock
+        ) as mock_close:
+            async with notifier:
+                pass
+            mock_close.assert_awaited_once()
+
+    async def test_send_message_closes_outside_context_manager(self):
+        """async_send_message closes the client when not in context manager."""
+        notifier = SlackNotifier(token="xoxb-test", channel="#alerts")
+        mock_client = AsyncMock()
+        notifier._async_client = mock_client
+
+        with patch.object(
+            notifier, "async_close", new_callable=AsyncMock
+        ) as mock_close:
+            await notifier.async_send_message("hello")
+            mock_close.assert_awaited_once()
+
+    async def test_send_message_preserves_client_in_context_manager(self):
+        """async_send_message does not close the client inside context manager."""
+        notifier = SlackNotifier(token="xoxb-test", channel="#alerts")
+        mock_client = AsyncMock()
+        notifier._async_client = mock_client
+
+        with patch.object(
+            notifier, "async_close", new_callable=AsyncMock
+        ) as mock_close:
+            async with notifier:
+                await notifier.async_send_message("hello")
+                mock_close.assert_not_awaited()
 
 
 # ===========================================================================
@@ -257,7 +344,8 @@ class TestSendMessageAsync:
         mock_client = AsyncMock()
         notifier._async_client = mock_client
 
-        await notifier.async_send_message("async hello")
+        with patch.object(notifier, "async_close", new_callable=AsyncMock):
+            await notifier.async_send_message("async hello")
 
         mock_client.chat_postMessage.assert_awaited_once_with(
             channel="#alerts",
@@ -273,7 +361,8 @@ class TestSendMessageAsync:
         try:
             raise TypeError("async boom")
         except TypeError as exc:
-            await notifier.async_send_error(exc)
+            with patch.object(notifier, "async_close", new_callable=AsyncMock):
+                await notifier.async_send_error(exc)
 
         mock_client.chat_postMessage.assert_awaited_once()
         call_kwargs = mock_client.chat_postMessage.call_args[1]
@@ -289,7 +378,8 @@ class TestSendMessageAsync:
         try:
             raise ValueError("original")
         except ValueError as exc:
-            await notifier.async_send_error(exc)
+            with patch.object(notifier, "async_close", new_callable=AsyncMock):
+                await notifier.async_send_error(exc)
 
 
 # ===========================================================================
@@ -335,9 +425,11 @@ class TestErrorHandlerDecorator:
         """Async decorated function re-raises after notifying."""
         notifier = SlackNotifier(token="xoxb-test", channel="#alerts")
 
-        with patch.object(
-            notifier, "async_send_error", new_callable=AsyncMock
-        ) as mock_send:
+        with (
+            patch.object(
+                notifier, "async_send_error", new_callable=AsyncMock
+            ) as mock_send,
+        ):
 
             @notifier.error_handler
             async def my_handler(event, context):
@@ -352,9 +444,11 @@ class TestErrorHandlerDecorator:
         """Async decorated function returns normally when no error."""
         notifier = SlackNotifier(token="xoxb-test", channel="#alerts")
 
-        with patch.object(
-            notifier, "async_send_error", new_callable=AsyncMock
-        ) as mock_send:
+        with (
+            patch.object(
+                notifier, "async_send_error", new_callable=AsyncMock
+            ) as mock_send,
+        ):
 
             @notifier.error_handler
             async def my_handler(event, context):
