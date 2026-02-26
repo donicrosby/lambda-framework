@@ -18,10 +18,12 @@ __all__ = ["EventBridgePublisher"]
 class EventBridgePublisher:
     """Async wrapper around ``events:PutEvents`` for publishing to an EventBridge bus.
 
-    The underlying ``aioboto3`` client is created lazily on the first publish
-    and reused for all subsequent calls, keeping the connection pool alive.
-    Use as an async context manager for deterministic cleanup, or call
-    ``close()`` manually when done.
+    The underlying ``aioboto3`` client is created lazily on the first publish,
+    reused across concurrent tasks within the same invocation, and
+    automatically closed when the last concurrent caller finishes.  This
+    keeps the connection pool alive for the duration of the work while
+    ensuring the connector is properly closed before ``asyncio.run()``
+    tears down the event loop.
 
     Context manager usage (deterministic cleanup)::
 
@@ -33,7 +35,7 @@ class EventBridgePublisher:
             await publisher.put_event("push", payload_a)
             await publisher.put_event("pull_request", payload_b)
 
-    Direct usage (client stays alive for reuse; call ``close()`` when done)::
+    Direct usage (client auto-closes when the last caller finishes)::
 
         publisher = EventBridgePublisher(
             event_bus_name="my-function-bus",
@@ -70,29 +72,40 @@ class EventBridgePublisher:
         self._client: Any | None = None
         self._client_ctx: Any | None = None
         self._in_context_manager = False
-        self._init_lock = asyncio.Lock()
+        self._lock = asyncio.Lock()
+        self._ref_count: int = 0
 
-    async def _get_client(self) -> Any:
-        """Return the shared client, creating it lazily on first access.
+    async def _acquire_client(self) -> Any:
+        """Create the client if needed, increment the ref count, and return it.
 
-        Uses double-checked locking via ``asyncio.Lock`` so concurrent
-        callers safely share a single client and its connection pool.
+        The ``asyncio.Lock`` ensures that only one task creates the client
+        while concurrent callers wait.  The lock is released before any I/O
+        so that API calls can proceed in parallel.
 
         """
-        if self._client is not None:
+        async with self._lock:
+            if self._client is None:
+                ctx = self._session.client("events")
+                self._client = await ctx.__aenter__()
+                self._client_ctx = ctx
+            self._ref_count += 1
             return self._client
-        async with self._init_lock:
-            if self._client is not None:
-                return self._client
-            ctx = self._session.client("events")
-            self._client = await ctx.__aenter__()
-            self._client_ctx = ctx
-            return self._client
+
+    async def _release_client(self) -> None:
+        """Decrement the ref count and close the client when it reaches zero."""
+        async with self._lock:
+            self._ref_count -= 1
+            if self._ref_count == 0 and not self._in_context_manager:
+                await self.close()
 
     async def __aenter__(self) -> EventBridgePublisher:
         """Enter the async context manager, eagerly creating the client."""
         self._in_context_manager = True
-        await self._get_client()
+        async with self._lock:
+            if self._client is None:
+                ctx = self._session.client("events")
+                self._client = await ctx.__aenter__()
+                self._client_ctx = ctx
         return self
 
     async def __aexit__(
@@ -115,6 +128,7 @@ class EventBridgePublisher:
             await self._client_ctx.__aexit__(None, None, None)
             self._client = None
             self._client_ctx = None
+        self._ref_count = 0
 
     async def put_event(
         self,
@@ -198,5 +212,11 @@ class EventBridgePublisher:
             entry.setdefault("EventBusName", self._event_bus_name)
             entry.setdefault("Source", self._source)
 
-        client = await self._get_client()
-        return await self._execute_put_events(client, entries)
+        if self._in_context_manager:
+            return await self._execute_put_events(self._client, entries)
+
+        client = await self._acquire_client()
+        try:
+            return await self._execute_put_events(client, entries)
+        finally:
+            await self._release_client()

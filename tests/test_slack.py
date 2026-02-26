@@ -177,12 +177,15 @@ class TestSlackNotifierInit:
         assert client is not None
         assert notifier._get_client() is client  # same instance
 
-    async def test_get_async_client_creates_async_webclient(self):
-        """_get_async_client creates an AsyncWebClient on first call."""
+    async def test_acquire_creates_async_webclient(self):
+        """_acquire_async_client creates an AsyncWebClient on first call."""
         notifier = SlackNotifier(token="xoxb-test", channel="#test")
-        client = await notifier._get_async_client()
+        client = await notifier._acquire_async_client()
         assert client is not None
-        assert await notifier._get_async_client() is client
+        assert notifier._async_ref_count == 1
+        client2 = await notifier._acquire_async_client()
+        assert client2 is client
+        assert notifier._async_ref_count == 2
 
 
 # ===========================================================================
@@ -201,11 +204,13 @@ class TestSlackNotifierLifecycle:
         mock_client = MagicMock()
         mock_client.session = mock_session
         notifier._async_client = mock_client
+        notifier._async_ref_count = 1
 
         await notifier.async_close()
 
         mock_session.close.assert_awaited_once()
         assert notifier._async_client is None
+        assert notifier._async_ref_count == 0
 
     async def test_async_close_is_idempotent(self):
         """Calling async_close() when no client exists is a no-op."""
@@ -245,17 +250,17 @@ class TestSlackNotifierLifecycle:
                 pass
             mock_close.assert_awaited_once()
 
-    async def test_send_message_reuses_client_outside_context_manager(self):
-        """async_send_message reuses the lazy singleton client across calls."""
+    async def test_send_message_closes_after_call(self):
+        """One-shot async_send_message closes the client when done."""
         notifier = SlackNotifier(token="xoxb-test", channel="#alerts")
         mock_client = AsyncMock()
         notifier._async_client = mock_client
 
         await notifier.async_send_message("hello")
-        await notifier.async_send_message("world")
 
-        assert mock_client.chat_postMessage.await_count == 2
-        assert notifier._async_client is mock_client
+        mock_client.chat_postMessage.assert_awaited_once()
+        assert notifier._async_client is None
+        assert notifier._async_ref_count == 0
 
     async def test_send_message_preserves_client_in_context_manager(self):
         """async_send_message reuses self._async_client inside context manager."""

@@ -164,7 +164,8 @@ class SlackNotifier:
         self._client: WebClient | None = None
         self._async_client: AsyncWebClient | None = None
         self._in_context_manager = False
-        self._async_init_lock = asyncio.Lock()
+        self._async_lock = asyncio.Lock()
+        self._async_ref_count: int = 0
 
     def _get_client(self) -> WebClient:
         """Return the sync ``WebClient``, creating it on first access."""
@@ -172,20 +173,26 @@ class SlackNotifier:
             self._client = WebClient(token=self._token)
         return self._client
 
-    async def _get_async_client(self) -> AsyncWebClient:
-        """Return the shared async client, creating it lazily on first access.
+    async def _acquire_async_client(self) -> AsyncWebClient:
+        """Create the async client if needed, increment the ref count, and return it.
 
-        Uses double-checked locking via ``asyncio.Lock`` so concurrent
-        callers safely share a single client and its connection pool.
+        The ``asyncio.Lock`` ensures that only one task creates the client
+        while concurrent callers wait.  The lock is released before any I/O
+        so that API calls can proceed in parallel.
 
         """
-        if self._async_client is not None:
+        async with self._async_lock:
+            if self._async_client is None:
+                self._async_client = AsyncWebClient(token=self._token)
+            self._async_ref_count += 1
             return self._async_client
-        async with self._async_init_lock:
-            if self._async_client is not None:
-                return self._async_client
-            self._async_client = AsyncWebClient(token=self._token)
-            return self._async_client
+
+    async def _release_async_client(self) -> None:
+        """Decrement the ref count and close the client when it reaches zero."""
+        async with self._async_lock:
+            self._async_ref_count -= 1
+            if self._async_ref_count == 0 and not self._in_context_manager:
+                await self.async_close()
 
     def _base_kwargs(self) -> dict[str, Any]:
         """Build keyword arguments shared by every ``chat_postMessage`` call."""
@@ -201,6 +208,9 @@ class SlackNotifier:
     async def __aenter__(self) -> SlackNotifier:
         """Enter the async context manager for client reuse without leaks."""
         self._in_context_manager = True
+        async with self._async_lock:
+            if self._async_client is None:
+                self._async_client = AsyncWebClient(token=self._token)
         return self
 
     async def __aexit__(
@@ -224,6 +234,7 @@ class SlackNotifier:
             if session is not None and not session.closed:
                 await session.close()
             self._async_client = None
+        self._async_ref_count = 0
 
     # -- public sync API ---------------------------------------------------
 
@@ -283,19 +294,31 @@ class SlackNotifier:
         """Post a message to the configured Slack channel (async).
 
         The underlying ``AsyncWebClient`` is created lazily on the first call
-        and reused for all subsequent calls, keeping the connection pool alive.
+        and reused across concurrent tasks.  Outside an ``async with`` block
+        the client is automatically closed when the last concurrent caller
+        finishes, ensuring the connector is cleaned up before
+        ``asyncio.run()`` tears down the event loop.
 
         Args:
             text: Fallback / notification text.
             blocks: Optional Block Kit blocks for rich formatting.
 
         """
-        client = await self._get_async_client()
         kwargs = self._base_kwargs()
         kwargs["text"] = text
         if blocks:
             kwargs["blocks"] = blocks
-        await client.chat_postMessage(**kwargs)
+
+        if self._in_context_manager:
+            client = self._async_client
+            await client.chat_postMessage(**kwargs)  # type: ignore[union-attr]
+            return
+
+        client = await self._acquire_async_client()
+        try:
+            await client.chat_postMessage(**kwargs)
+        finally:
+            await self._release_async_client()
 
     async def async_send_error(
         self,

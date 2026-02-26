@@ -238,34 +238,45 @@ class TestAsyncContextManager:
 # ===========================================================================
 
 
-class TestLazyClientCreation:
-    """Verify the client is created lazily and reused across calls."""
+class TestRefCountedLifecycle:
+    """Verify ref-counted client lifecycle outside the context manager."""
 
-    async def test_creates_client_on_first_call(
+    async def test_creates_and_closes_per_call(
         self, publisher, mock_session, mock_client
     ):
-        """Create the client the first time put_event is called."""
+        """One-shot call creates the client and closes it when done."""
         assert publisher._client is None
 
         await publisher.put_event("push", {"k": "v"})
 
-        assert publisher._client is mock_client
+        assert publisher._client is None
+        assert publisher._ref_count == 0
         mock_session.client.assert_called_once_with("events")
+        ctx = mock_session.client.return_value
+        ctx.__aexit__.assert_awaited_once()
 
-    async def test_reuses_client_across_calls(
+    async def test_sequential_calls_recreate_client(
         self, publisher, mock_session, mock_client
     ):
-        """Reuse the same client for subsequent put_event calls."""
+        """Sequential calls each create and close their own client."""
         await publisher.put_event("a", {})
         await publisher.put_event("b", {})
 
-        mock_session.client.assert_called_once()
+        assert mock_session.client.call_count == 2
         assert mock_client.put_events.await_count == 2
+        assert publisher._ref_count == 0
 
-    async def test_concurrent_init_creates_single_client(
+    async def test_concurrent_calls_share_single_client(
         self, publisher, mock_session, mock_client
     ):
-        """Concurrent calls share a single client via the init lock."""
+        """Concurrent calls share a single client via ref counting."""
+
+        async def yielding_put_events(**kwargs):
+            await asyncio.sleep(0)
+            return {"FailedEntryCount": 0, "Entries": [{"EventId": "evt-1"}]}
+
+        mock_client.put_events.side_effect = yielding_put_events
+
         await asyncio.gather(
             publisher.put_event("a", {}),
             publisher.put_event("b", {}),
@@ -274,34 +285,13 @@ class TestLazyClientCreation:
 
         mock_session.client.assert_called_once()
         assert mock_client.put_events.await_count == 3
+        assert publisher._client is None
+        assert publisher._ref_count == 0
 
-
-class TestClose:
-    """Verify the public close() method."""
-
-    async def test_close_exits_client_context(
+    async def test_client_closed_after_put_events_failure(
         self, publisher, mock_session, mock_client
     ):
-        """close() exits the underlying aioboto3 client context manager."""
-        await publisher.put_event("push", {"k": "v"})
-        assert publisher._client is mock_client
-
-        ctx = mock_session.client.return_value
-        await publisher.close()
-
-        ctx.__aexit__.assert_awaited_once_with(None, None, None)
-        assert publisher._client is None
-        assert publisher._client_ctx is None
-
-    async def test_close_is_idempotent(self, publisher):
-        """Calling close() when no client exists is a no-op."""
-        await publisher.close()
-        assert publisher._client is None
-
-    async def test_client_survives_put_events_failure(
-        self, publisher, mock_session, mock_client
-    ):
-        """Client stays alive after a failed put_events for reuse."""
+        """Client is closed even when put_events raises (ref count drops to 0)."""
         mock_client.put_events.return_value = {
             "FailedEntryCount": 1,
             "Entries": [{"ErrorCode": "InternalFailure", "ErrorMessage": "boom"}],
@@ -310,4 +300,28 @@ class TestClose:
         with pytest.raises(RuntimeError, match="failed for 1 of 1"):
             await publisher.put_events([{"DetailType": "a", "Detail": "{}"}])
 
-        assert publisher._client is mock_client
+        assert publisher._client is None
+        assert publisher._ref_count == 0
+
+
+class TestClose:
+    """Verify the public close() method."""
+
+    async def test_close_exits_client_context(self, publisher, mock_session):
+        """close() exits the underlying aioboto3 client context manager."""
+        ctx = mock_session.client.return_value
+        publisher._client = "sentinel"
+        publisher._client_ctx = ctx
+        publisher._ref_count = 1
+
+        await publisher.close()
+
+        ctx.__aexit__.assert_awaited_once_with(None, None, None)
+        assert publisher._client is None
+        assert publisher._client_ctx is None
+        assert publisher._ref_count == 0
+
+    async def test_close_is_idempotent(self, publisher):
+        """Calling close() when no client exists is a no-op."""
+        await publisher.close()
+        assert publisher._client is None
