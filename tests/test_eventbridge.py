@@ -1,5 +1,6 @@
 """Tests for the async EventBridge publisher."""
 
+import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -238,47 +239,54 @@ class TestAsyncContextManager:
 
 
 class TestLazyClientCreation:
-    """Verify one-shot mode creates and closes the client for each call."""
+    """Verify the client is created lazily and reused across calls."""
 
-    async def test_creates_and_closes_client_per_call(
+    async def test_creates_client_on_first_call(
         self, publisher, mock_session, mock_client
     ):
-        """Create the client for each put_event call, closing it afterward."""
+        """Create the client the first time put_event is called."""
         assert publisher._client is None
 
         await publisher.put_event("push", {"k": "v"})
 
-        assert publisher._client is None
+        assert publisher._client is mock_client
         mock_session.client.assert_called_once_with("events")
-        ctx = mock_session.client.return_value
-        ctx.__aexit__.assert_awaited_once()
 
-    async def test_creates_new_client_per_call(
+    async def test_reuses_client_across_calls(
         self, publisher, mock_session, mock_client
     ):
-        """Create a fresh client for each put_event call outside context manager."""
+        """Reuse the same client for subsequent put_event calls."""
         await publisher.put_event("a", {})
         await publisher.put_event("b", {})
 
-        assert mock_session.client.call_count == 2
+        mock_session.client.assert_called_once()
         assert mock_client.put_events.await_count == 2
+
+    async def test_concurrent_init_creates_single_client(
+        self, publisher, mock_session, mock_client
+    ):
+        """Concurrent calls share a single client via the init lock."""
+        await asyncio.gather(
+            publisher.put_event("a", {}),
+            publisher.put_event("b", {}),
+            publisher.put_event("c", {}),
+        )
+
+        mock_session.client.assert_called_once()
+        assert mock_client.put_events.await_count == 3
 
 
 class TestClose:
     """Verify the public close() method."""
 
-    async def test_close_exits_client_context(self, publisher, mock_session):
+    async def test_close_exits_client_context(
+        self, publisher, mock_session, mock_client
+    ):
         """close() exits the underlying aioboto3 client context manager."""
         await publisher.put_event("push", {"k": "v"})
-        # After one-shot, client is already closed
-        assert publisher._client is None
+        assert publisher._client is mock_client
 
-        # Manually create a client to test close()
         ctx = mock_session.client.return_value
-        ctx.__aexit__.reset_mock()
-        publisher._client = "sentinel"
-        publisher._client_ctx = ctx
-
         await publisher.close()
 
         ctx.__aexit__.assert_awaited_once_with(None, None, None)
@@ -290,18 +298,16 @@ class TestClose:
         await publisher.close()
         assert publisher._client is None
 
-    async def test_close_on_put_events_failure(
+    async def test_client_survives_put_events_failure(
         self, publisher, mock_session, mock_client
     ):
-        """Client is closed even when put_events raises."""
+        """Client stays alive after a failed put_events for reuse."""
         mock_client.put_events.return_value = {
             "FailedEntryCount": 1,
             "Entries": [{"ErrorCode": "InternalFailure", "ErrorMessage": "boom"}],
         }
-        ctx = mock_session.client.return_value
 
         with pytest.raises(RuntimeError, match="failed for 1 of 1"):
             await publisher.put_events([{"DetailType": "a", "Detail": "{}"}])
 
-        ctx.__aexit__.assert_awaited()
-        assert publisher._client is None
+        assert publisher._client is mock_client

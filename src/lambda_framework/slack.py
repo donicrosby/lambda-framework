@@ -164,6 +164,7 @@ class SlackNotifier:
         self._client: WebClient | None = None
         self._async_client: AsyncWebClient | None = None
         self._in_context_manager = False
+        self._async_init_lock = asyncio.Lock()
 
     def _get_client(self) -> WebClient:
         """Return the sync ``WebClient``, creating it on first access."""
@@ -171,11 +172,20 @@ class SlackNotifier:
             self._client = WebClient(token=self._token)
         return self._client
 
-    def _get_async_client(self) -> AsyncWebClient:
-        """Return the async ``AsyncWebClient``, creating it on first access."""
-        if self._async_client is None:
+    async def _get_async_client(self) -> AsyncWebClient:
+        """Return the shared async client, creating it lazily on first access.
+
+        Uses double-checked locking via ``asyncio.Lock`` so concurrent
+        callers safely share a single client and its connection pool.
+
+        """
+        if self._async_client is not None:
+            return self._async_client
+        async with self._async_init_lock:
+            if self._async_client is not None:
+                return self._async_client
             self._async_client = AsyncWebClient(token=self._token)
-        return self._async_client
+            return self._async_client
 
     def _base_kwargs(self) -> dict[str, Any]:
         """Build keyword arguments shared by every ``chat_postMessage`` call."""
@@ -272,21 +282,20 @@ class SlackNotifier:
     ) -> None:
         """Post a message to the configured Slack channel (async).
 
+        The underlying ``AsyncWebClient`` is created lazily on the first call
+        and reused for all subsequent calls, keeping the connection pool alive.
+
         Args:
             text: Fallback / notification text.
             blocks: Optional Block Kit blocks for rich formatting.
 
         """
-        client = self._get_async_client()
+        client = await self._get_async_client()
         kwargs = self._base_kwargs()
         kwargs["text"] = text
         if blocks:
             kwargs["blocks"] = blocks
-        try:
-            await client.chat_postMessage(**kwargs)
-        finally:
-            if not self._in_context_manager:
-                await self.async_close()
+        await client.chat_postMessage(**kwargs)
 
     async def async_send_error(
         self,
