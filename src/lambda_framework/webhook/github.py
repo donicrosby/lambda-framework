@@ -2,12 +2,21 @@
 
 import asyncio
 import inspect
+import json
 from collections.abc import Callable
 from functools import wraps
 from types import UnionType
 from typing import TYPE_CHECKING, Annotated, Any, TypeVar
 
-from fastapi import APIRouter, Body, Depends, FastAPI, Header, HTTPException, Security
+from fastapi import (
+    APIRouter,
+    Depends,
+    FastAPI,
+    Header,
+    HTTPException,
+    Request,
+    Security,
+)
 
 if TYPE_CHECKING:
     from githubkit.versions.latest.webhooks import WebhookEvent
@@ -39,15 +48,19 @@ class GithubWebhookValidator:
         """
         self._secret = secret
 
-    def __call__(
+    async def __call__(
         self,
-        payload: Annotated[dict, Body(...)],
+        request: Request,
         x_hub_signature_256: Annotated[str, Header(...)],
     ) -> dict[str, Any]:
         """Validate the webhook signature and return the payload.
 
+        Reads the raw request body to ensure byte-for-byte fidelity with what
+        GitHub signed.  Re-serializing a parsed dict can silently alter the
+        bytes (e.g. escaped forward slashes), breaking HMAC verification.
+
         Args:
-            payload: The raw JSON payload from the webhook request.
+            request: The incoming FastAPI request (raw body is read from here).
             x_hub_signature_256: The signature header sent by GitHub.
 
         Returns:
@@ -62,9 +75,10 @@ class GithubWebhookValidator:
             raise ImportError(
                 "Githubkit is missing, please install the 'github' optional dependency."
             )
-        if not verify(self._secret, payload, x_hub_signature_256):
+        raw_body = await request.body()
+        if not verify(self._secret, raw_body, x_hub_signature_256):
             raise HTTPException(status_code=401, detail="Invalid signature")
-        return payload
+        return json.loads(raw_body)
 
 
 class GithubWebhookParser:
