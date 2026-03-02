@@ -8,6 +8,7 @@ import pytest
 from lambda_framework.dispatch import (
     _ensure_event_loop,
     _is_api_gateway_event,
+    _is_authorizer_event,
     _is_eventbridge_event,
     _is_sqs_event,
     create_dispatcher,
@@ -62,6 +63,31 @@ SQS_EVENT = {
             "eventSourceARN": "arn:aws:sqs:us-east-1:123456789012:my-queue",
         }
     ]
+}
+
+REQUEST_AUTHORIZER_EVENT = {
+    "type": "REQUEST",
+    "methodArn": "arn:aws:execute-api:us-east-1:123456789012:abc123/prod/GET/resource",
+    "resource": "/resource",
+    "path": "/resource",
+    "httpMethod": "GET",
+    "headers": {"Authorization": "Bearer token123"},
+    "queryStringParameters": None,
+    "pathParameters": None,
+    "stageVariables": None,
+    "requestContext": {
+        "resourceId": "abc123",
+        "apiId": "api123",
+        "resourcePath": "/resource",
+        "httpMethod": "GET",
+        "stage": "prod",
+    },
+}
+
+TOKEN_AUTHORIZER_EVENT = {
+    "type": "TOKEN",
+    "authorizationToken": "Bearer token123",
+    "methodArn": "arn:aws:execute-api:us-east-1:123456789012:abc123/prod/GET/resource",
 }
 
 
@@ -152,6 +178,30 @@ class TestIsSqsEvent:
     def test_rejects_empty(self):
         """Reject an empty dict."""
         assert _is_sqs_event({}) is False
+
+
+class TestIsAuthorizerEvent:
+    """Verify _is_authorizer_event detects REQUEST and TOKEN authorizer events."""
+
+    def test_request_authorizer(self):
+        """Accept REQUEST authorizer event."""
+        assert _is_authorizer_event(REQUEST_AUTHORIZER_EVENT) is True
+
+    def test_token_authorizer(self):
+        """Accept TOKEN authorizer event."""
+        assert _is_authorizer_event(TOKEN_AUTHORIZER_EVENT) is True
+
+    def test_rejects_api_gateway(self):
+        """Reject API Gateway v1 event."""
+        assert _is_authorizer_event(API_GATEWAY_V1_EVENT) is False
+
+    def test_rejects_eventbridge(self):
+        """Reject EventBridge event."""
+        assert _is_authorizer_event(EVENTBRIDGE_EVENT) is False
+
+    def test_rejects_empty(self):
+        """Reject empty dict."""
+        assert _is_authorizer_event({}) is False
 
 
 # ===========================================================================
@@ -248,6 +298,103 @@ class TestCreateDispatcher:
         http.assert_called_once()
         eb.assert_called_once()
         sqs.assert_called_once()
+
+
+class TestCreateDispatcherAuthorizer:
+    """Verify the dispatcher routes authorizer events to authorizer_handler."""
+
+    def test_routes_request_authorizer(self):
+        """Route REQUEST authorizer event to authorizer_handler."""
+        auth = MagicMock(return_value={"principalId": "user123", "policyDocument": {}})
+        handler = create_dispatcher(authorizer_handler=auth)
+
+        result = handler(REQUEST_AUTHORIZER_EVENT, None)
+
+        auth.assert_called_once_with(REQUEST_AUTHORIZER_EVENT, None)
+        assert result == {"principalId": "user123", "policyDocument": {}}
+
+    def test_routes_token_authorizer(self):
+        """Route TOKEN authorizer event to authorizer_handler."""
+        auth = MagicMock(return_value={"principalId": "user456", "policyDocument": {}})
+        handler = create_dispatcher(authorizer_handler=auth)
+
+        result = handler(TOKEN_AUTHORIZER_EVENT, None)
+
+        auth.assert_called_once_with(TOKEN_AUTHORIZER_EVENT, None)
+        assert result == {"principalId": "user456", "policyDocument": {}}
+
+    def test_raises_when_authorizer_handler_missing(self):
+        """Raise ValueError when authorizer event arrives with no handler."""
+        handler = create_dispatcher()
+
+        with pytest.raises(ValueError, match="no authorizer_handler"):
+            handler(REQUEST_AUTHORIZER_EVENT, None)
+
+    def test_request_authorizer_not_misrouted_to_http(self):
+        """REQUEST with requestContext is NOT routed to http_handler."""
+        http = MagicMock(return_value={"statusCode": 200})
+        auth = MagicMock(return_value={"principalId": "ok", "policyDocument": {}})
+        handler = create_dispatcher(http_handler=http, authorizer_handler=auth)
+
+        result = handler(REQUEST_AUTHORIZER_EVENT, None)
+
+        auth.assert_called_once()
+        http.assert_not_called()
+        assert result == {"principalId": "ok", "policyDocument": {}}
+
+    def test_async_authorizer_handler(self):
+        """Async authorizer handler works via asyncio.run."""
+
+        async def async_auth(event, context):
+            return {"principalId": event["type"], "policyDocument": {}}
+
+        handler = create_dispatcher(authorizer_handler=async_auth)
+        result = handler(REQUEST_AUTHORIZER_EVENT, None)
+
+        assert result == {"principalId": "REQUEST", "policyDocument": {}}
+
+    def test_authorizer_with_error_notifier(self):
+        """error_notifier fires on authorizer errors."""
+        notifier = MagicMock()
+        failing_auth = MagicMock(side_effect=RuntimeError("auth boom"))
+        ctx = MagicMock()
+
+        handler = create_dispatcher(
+            authorizer_handler=failing_auth,
+            error_notifier=notifier,
+        )
+
+        with pytest.raises(RuntimeError, match="auth boom"):
+            handler(REQUEST_AUTHORIZER_EVENT, ctx)
+
+        notifier.send_error.assert_called_once()
+        call_kwargs = notifier.send_error.call_args
+        assert isinstance(call_kwargs[0][0], RuntimeError)
+        assert call_kwargs[1]["context"] is ctx
+        assert call_kwargs[1]["event"] is REQUEST_AUTHORIZER_EVENT
+
+    def test_all_handlers_including_authorizer(self):
+        """All 4 handlers registered, each routes correctly."""
+        http = MagicMock(return_value="http")
+        eb = MagicMock(return_value="eb")
+        sqs = MagicMock(return_value="sqs")
+        auth = MagicMock(return_value="auth")
+        handler = create_dispatcher(
+            http_handler=http,
+            eventbridge_handler=eb,
+            sqs_handler=sqs,
+            authorizer_handler=auth,
+        )
+
+        assert handler(API_GATEWAY_V1_EVENT, None) == "http"
+        assert handler(EVENTBRIDGE_EVENT, None) == "eb"
+        assert handler(SQS_EVENT, None) == "sqs"
+        assert handler(REQUEST_AUTHORIZER_EVENT, None) == "auth"
+
+        http.assert_called_once()
+        eb.assert_called_once()
+        sqs.assert_called_once()
+        auth.assert_called_once()
 
     def test_passes_context_through(self):
         """Forward the Lambda context object to the sub-handler unchanged."""

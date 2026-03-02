@@ -15,6 +15,11 @@ __all__ = ["create_dispatcher"]
 EventHandler = Callable[[dict[str, Any], Any], Any]
 
 
+def _is_authorizer_event(event: dict[str, Any]) -> bool:
+    """Detect API Gateway REQUEST or TOKEN authorizer events."""
+    return event.get("type") in ("REQUEST", "TOKEN")
+
+
 def _is_api_gateway_event(event: dict[str, Any]) -> bool:
     """Detect API Gateway REST (v1) or HTTP API (v2) proxy events."""
     if "requestContext" not in event:
@@ -64,8 +69,17 @@ def _dispatch(
     http_handler: EventHandler | None,
     eventbridge_handler: EventHandler | None,
     sqs_handler: EventHandler | None,
+    authorizer_handler: EventHandler | None,
 ) -> Any:
     """Route *event* to the matching sub-handler."""
+    if _is_authorizer_event(event):
+        if authorizer_handler is None:
+            raise ValueError(
+                "Received authorizer event but no authorizer_handler is registered"
+            )
+        logger.debug("Dispatching to authorizer_handler")
+        return _invoke(authorizer_handler, event, context)
+
     if _is_api_gateway_event(event):
         if http_handler is None:
             raise ValueError(
@@ -97,6 +111,7 @@ def create_dispatcher(
     http_handler: EventHandler | None = None,
     eventbridge_handler: EventHandler | None = None,
     sqs_handler: EventHandler | None = None,
+    authorizer_handler: EventHandler | None = None,
     error_notifier: Any | None = None,
 ) -> EventHandler:
     """Build a Lambda handler that routes events to the appropriate sub-handler.
@@ -109,6 +124,8 @@ def create_dispatcher(
         http_handler: Handler for API Gateway proxy events (e.g. Mangum).
         eventbridge_handler: Handler for EventBridge events (sync or async).
         sqs_handler: Handler for SQS batch events (sync or async).
+        authorizer_handler: Handler for API Gateway REQUEST/TOKEN authorizer
+            events (sync or async).
         error_notifier: Optional object with a ``send_error(exc, *, context,
             event)`` method (e.g. :class:`~lambda_framework.slack.SlackNotifier`).
             When provided, unhandled exceptions from any sub-handler are
@@ -131,6 +148,7 @@ def create_dispatcher(
                 http_handler=http_handler,
                 eventbridge_handler=eventbridge_handler,
                 sqs_handler=sqs_handler,
+                authorizer_handler=authorizer_handler,
             )
         except Exception as exc:
             if error_notifier is not None:
