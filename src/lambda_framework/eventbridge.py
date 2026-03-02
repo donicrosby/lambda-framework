@@ -3,16 +3,26 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import logging
+from collections.abc import Callable
 from types import TracebackType
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import aioboto3
+if TYPE_CHECKING:
+    import aioboto3
+
+try:
+    import aioboto3 as _aioboto3
+except ImportError:
+    _aioboto3 = None
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["EventBridgePublisher"]
+__all__ = ["EventBridgePublisher", "EventBridgeRouter"]
+
+EventHandler = Callable[[dict[str, Any], Any], Any]
 
 
 class EventBridgePublisher:
@@ -66,9 +76,14 @@ class EventBridgePublisher:
             session: Optional pre-configured ``aioboto3.Session``.
 
         """
+        if _aioboto3 is None:
+            raise ImportError(
+                "aioboto3 is required for EventBridgePublisher. "
+                "Install the 'eventbridge' extra."
+            )
         self._event_bus_name = event_bus_name
         self._source = source
-        self._session = session or aioboto3.Session()
+        self._session = session or _aioboto3.Session()
         self._client: Any | None = None
         self._client_ctx: Any | None = None
         self._in_context_manager = False
@@ -220,3 +235,90 @@ class EventBridgePublisher:
             return await self._execute_put_events(client, entries)
         finally:
             await self._release_client()
+
+
+class EventBridgeRouter:
+    """Declarative router for EventBridge events based on ``detail-type``.
+
+    Provides a decorator-based API for registering handlers, similar to
+    :class:`~lambda_framework.webhook.github.GithubWebhookRouter`.
+
+    Example::
+
+        router = EventBridgeRouter()
+
+        @router.on("vuln-sync")
+        async def handle_vuln_sync(event, context):
+            ...
+
+        @router.on("codeowner-to-jira-team")
+        async def handle_codeowner(event, context):
+            ...
+
+        handler = create_dispatcher(eventbridge_handler=router.dispatch)
+
+    Args:
+        default_handler: Optional fallback handler invoked when no registered
+            handler matches the event's ``detail-type``.
+
+    """
+
+    def __init__(self, *, default_handler: EventHandler | None = None) -> None:
+        """Initialise the router with optional default handler."""
+        self._handlers: dict[str, EventHandler] = {}
+        self._default_handler = default_handler
+
+    def on(self, detail_type: str) -> Callable[[EventHandler], EventHandler]:
+        """Register a handler for the given *detail_type*.
+
+        Args:
+            detail_type: The EventBridge ``detail-type`` value to match.
+
+        Returns:
+            A decorator that registers the handler and returns it unchanged.
+
+        Raises:
+            ValueError: If a handler is already registered for *detail_type*.
+
+        """
+
+        def decorator(func: EventHandler) -> EventHandler:
+            if detail_type in self._handlers:
+                raise ValueError(
+                    f"A handler is already registered for detail-type {detail_type!r}"
+                )
+            self._handlers[detail_type] = func
+            return func
+
+        return decorator
+
+    def dispatch(self, event: dict[str, Any], context: Any) -> Any:
+        """Route *event* to the handler registered for its ``detail-type``.
+
+        Async handlers are executed via ``asyncio.run()``.  If no handler
+        is registered and no *default_handler* was provided, a warning is
+        logged and ``None`` is returned.
+
+        Args:
+            event: The full EventBridge event dict.
+            context: The Lambda context object.
+
+        Returns:
+            The return value of the matched handler.
+
+        """
+        detail_type = event.get("detail-type", "")
+        handler = self._handlers.get(detail_type, self._default_handler)
+
+        if handler is None:
+            logger.warning(
+                "No handler registered for detail-type %r; ignoring event",
+                detail_type,
+            )
+            return None
+
+        logger.debug("Dispatching EventBridge event to handler for %r", detail_type)
+        result = handler(event, context)
+        if inspect.iscoroutine(result):
+            return asyncio.run(result)
+        return result

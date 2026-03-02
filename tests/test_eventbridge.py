@@ -6,10 +6,22 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from lambda_framework.eventbridge import EventBridgePublisher
+from lambda_framework.eventbridge import EventBridgePublisher, EventBridgeRouter
 
 BUS_NAME = "my-function-bus"
 SOURCE = "webhook.github"
+
+SAMPLE_EB_EVENT = {
+    "version": "0",
+    "id": "12345678-1234-1234-1234-123456789012",
+    "detail-type": "vuln-sync",
+    "source": "my-app",
+    "account": "123456789012",
+    "time": "2025-01-01T00:00:00Z",
+    "region": "us-east-1",
+    "resources": [],
+    "detail": {"project": "my-project"},
+}
 
 
 # ---------------------------------------------------------------------------
@@ -60,7 +72,7 @@ class TestInit:
 
     def test_creates_default_session(self):
         """Create an aioboto3.Session when none is provided."""
-        with patch("lambda_framework.eventbridge.aioboto3.Session") as mock_sess:
+        with patch("lambda_framework.eventbridge._aioboto3.Session") as mock_sess:
             EventBridgePublisher("bus", "src")
             mock_sess.assert_called_once()
 
@@ -325,3 +337,185 @@ class TestClose:
         """Calling close() when no client exists is a no-op."""
         await publisher.close()
         assert publisher._client is None
+
+
+# ===========================================================================
+# EventBridgeRouter tests
+# ===========================================================================
+
+
+class TestEventBridgeRouterInit:
+    """Verify EventBridgeRouter constructor."""
+
+    def test_empty_router(self):
+        """Router starts with no handlers."""
+        router = EventBridgeRouter()
+        assert router._handlers == {}
+        assert router._default_handler is None
+
+    def test_default_handler(self):
+        """default_handler is stored."""
+
+        def fallback(event, context):
+            return "fallback"
+
+        router = EventBridgeRouter(default_handler=fallback)
+        assert router._default_handler is fallback
+
+
+class TestEventBridgeRouterOn:
+    """Verify the on() decorator registers handlers."""
+
+    def test_register_handler(self):
+        """on() registers a handler for the given detail-type."""
+        router = EventBridgeRouter()
+
+        @router.on("vuln-sync")
+        def handle_vuln(event, context):
+            return "ok"
+
+        assert router._handlers["vuln-sync"] is handle_vuln
+
+    def test_register_multiple_handlers(self):
+        """Multiple detail-types can be registered."""
+        router = EventBridgeRouter()
+
+        @router.on("vuln-sync")
+        def handle_vuln(event, context):
+            pass
+
+        @router.on("codeowner-to-jira-team")
+        def handle_codeowner(event, context):
+            pass
+
+        assert "vuln-sync" in router._handlers
+        assert "codeowner-to-jira-team" in router._handlers
+
+    def test_duplicate_detail_type_raises(self):
+        """ValueError when registering duplicate detail-type."""
+        router = EventBridgeRouter()
+
+        @router.on("vuln-sync")
+        def first(event, context):
+            pass
+
+        with pytest.raises(ValueError, match="already registered for detail-type"):
+
+            @router.on("vuln-sync")
+            def second(event, context):
+                pass
+
+    def test_returns_original_function(self):
+        """Decorator returns the function unchanged."""
+        router = EventBridgeRouter()
+
+        def my_handler(event, context):
+            return "result"
+
+        decorated = router.on("vuln-sync")(my_handler)
+        assert decorated is my_handler
+
+
+class TestEventBridgeRouterDispatch:
+    """Verify dispatch routes events to handlers."""
+
+    def test_dispatch_to_registered_handler(self):
+        """Routes to the correct handler for the detail-type."""
+        router = EventBridgeRouter()
+        handler = MagicMock(return_value="done")
+
+        @router.on("vuln-sync")
+        def handle_vuln(event, context):
+            return handler(event, context)
+
+        context = MagicMock()
+        result = router.dispatch(SAMPLE_EB_EVENT, context)
+
+        handler.assert_called_once_with(SAMPLE_EB_EVENT, context)
+        assert result == "done"
+
+    def test_dispatch_async_handler(self):
+        """Async handler is executed via asyncio.run()."""
+        router = EventBridgeRouter()
+        received = []
+
+        @router.on("vuln-sync")
+        async def handle_vuln(event, context):
+            received.append((event, context))
+            return "async-ok"
+
+        context = MagicMock()
+        result = router.dispatch(SAMPLE_EB_EVENT, context)
+
+        assert received == [(SAMPLE_EB_EVENT, context)]
+        assert result == "async-ok"
+
+    def test_dispatch_unknown_detail_type_returns_none(self, caplog):
+        """Logs warning and returns None when no handler matches."""
+        router = EventBridgeRouter()
+        event = {**SAMPLE_EB_EVENT, "detail-type": "unknown-type"}
+        context = MagicMock()
+
+        result = router.dispatch(event, context)
+
+        assert result is None
+        assert "No handler registered for detail-type" in caplog.text
+
+    def test_dispatch_to_default_handler(self):
+        """Falls back to default when no match."""
+        default = MagicMock(return_value="default-result")
+        router = EventBridgeRouter(default_handler=default)
+        event = {**SAMPLE_EB_EVENT, "detail-type": "unknown-type"}
+        context = MagicMock()
+
+        result = router.dispatch(event, context)
+
+        default.assert_called_once_with(event, context)
+        assert result == "default-result"
+
+    def test_dispatch_passes_event_and_context(self):
+        """Handler receives both event and context."""
+        router = EventBridgeRouter()
+        received_event = None
+        received_context = None
+
+        @router.on("vuln-sync")
+        def handle_vuln(event, context):
+            nonlocal received_event, received_context
+            received_event = event
+            received_context = context
+            return "ok"
+
+        context = MagicMock()
+        router.dispatch(SAMPLE_EB_EVENT, context)
+
+        assert received_event == SAMPLE_EB_EVENT
+        assert received_context is context
+
+    def test_dispatch_multiple_handlers_routes_correctly(self):
+        """Register 3 handlers; each routes to the correct one."""
+        router = EventBridgeRouter()
+
+        @router.on("vuln-sync")
+        def handle_vuln(event, context):
+            return "vuln"
+
+        @router.on("codeowner-to-jira-team")
+        def handle_codeowner(event, context):
+            return "codeowner"
+
+        @router.on("other-type")
+        def handle_other(event, context):
+            return "other"
+
+        context = MagicMock()
+
+        r1 = router.dispatch(SAMPLE_EB_EVENT, context)
+        r2 = router.dispatch(
+            {**SAMPLE_EB_EVENT, "detail-type": "codeowner-to-jira-team"}, context
+        )
+        r3 = router.dispatch({**SAMPLE_EB_EVENT, "detail-type": "other-type"}, context)
+
+        assert r1 == "vuln"
+        assert r2 == "codeowner"
+        assert r3 == "other"

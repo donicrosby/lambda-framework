@@ -10,6 +10,7 @@ from .webhook import (
     GithubWebhookParser,
     GithubWebhookRouter,
     GithubWebhookValidator,
+    create_app,
 )
 
 __all__ = [
@@ -19,15 +20,17 @@ __all__ = [
     "GithubWebhookValidator",
     "GithubWebhookParser",
     "create_dispatcher",
+    "create_app",
 ]
 
-# Optional eventbridge module (requires aioboto3 package)
+# Optional eventbridge module (EventBridgePublisher requires aioboto3 package)
 try:
-    from .eventbridge import EventBridgePublisher
+    from .eventbridge import EventBridgePublisher, EventBridgeRouter
 
-    __all__.append("EventBridgePublisher")
+    __all__.extend(["EventBridgePublisher", "EventBridgeRouter"])
 except ImportError:
     EventBridgePublisher = None  # type: ignore[assignment,misc]
+    EventBridgeRouter = None  # type: ignore[assignment,misc]
 
 # Optional cache module (requires redis package)
 try:
