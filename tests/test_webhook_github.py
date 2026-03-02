@@ -3,10 +3,11 @@
 import hashlib
 import hmac
 import json
-from unittest.mock import MagicMock, patch
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, Security
 from fastapi.testclient import TestClient
 from githubkit.versions.latest.webhooks import PushEvent
 
@@ -17,11 +18,27 @@ from lambda_framework.webhook.github import (
 )
 
 
-def generate_signature(secret: str, payload: dict) -> str:
-    """Generate a valid GitHub webhook signature for testing."""
-    payload_bytes = json.dumps(payload, separators=(",", ":")).encode()
+def generate_signature(secret: str, payload: dict | bytes) -> str:
+    """Generate a valid GitHub webhook signature for testing.
+
+    When *payload* is a ``dict`` the bytes are produced with compact
+    ``json.dumps`` separators (matching what httpx / TestClient sends).
+    Pass raw ``bytes`` to sign an exact byte string (e.g. one containing
+    escaped forward-slashes).
+    """
+    if isinstance(payload, bytes):
+        payload_bytes = payload
+    else:
+        payload_bytes = json.dumps(payload, separators=(",", ":")).encode()
     signature = hmac.new(secret.encode(), payload_bytes, hashlib.sha256).hexdigest()
     return f"sha256={signature}"
+
+
+def _mock_request(body: bytes) -> MagicMock:
+    """Create a mock ``Request`` whose ``.body()`` returns *body*."""
+    mock = MagicMock()
+    mock.body = AsyncMock(return_value=body)
+    return mock
 
 
 class TestGithubWebhookValidator:
@@ -32,9 +49,11 @@ class TestGithubWebhookValidator:
         validator = GithubWebhookValidator(secret="test-secret")
         assert validator._secret == "test-secret"
 
-    def test_call_raises_import_error_when_verify_missing(self):
+    async def test_call_raises_import_error_when_verify_missing(self):
         """Should raise ImportError when githubkit verify is not available."""
         validator = GithubWebhookValidator(secret="test-secret")
+        raw = json.dumps({"test": "data"}).encode()
+        request = _mock_request(raw)
 
         with (
             patch("lambda_framework.webhook.github.verify", None),
@@ -43,34 +62,42 @@ class TestGithubWebhookValidator:
                 match="Githubkit is missing, please install the 'github' optional dependency",
             ),
         ):
-            validator(payload={"test": "data"}, x_hub_signature_256="sha256=fake")
+            await validator(request=request, x_hub_signature_256="sha256=fake")
 
-    def test_call_raises_http_exception_on_invalid_signature(self):
+    async def test_call_raises_http_exception_on_invalid_signature(self):
         """Should raise HTTPException 401 when signature is invalid."""
         from fastapi import HTTPException
 
         validator = GithubWebhookValidator(secret="correct-secret")
+        raw = json.dumps({"test": "data"}).encode()
+        request = _mock_request(raw)
 
         with pytest.raises(HTTPException) as exc_info:
-            validator(payload={"test": "data"}, x_hub_signature_256="sha256=invalidsig")
+            await validator(request=request, x_hub_signature_256="sha256=invalidsig")
 
         assert exc_info.value.status_code == 401
         assert exc_info.value.detail == "Invalid signature"
 
-    def test_call_returns_payload_on_valid_signature(self):
+    async def test_call_returns_payload_on_valid_signature(self):
         """Should return payload when signature is valid."""
         secret = "test-secret"
         payload = {"action": "opened", "number": 1}
-        signature = generate_signature(secret, payload)
+        raw = json.dumps(payload).encode()
+        signature = generate_signature(secret, raw)
+        request = _mock_request(raw)
 
         validator = GithubWebhookValidator(secret=secret)
-        result = validator(payload=payload, x_hub_signature_256=signature)
+        result = await validator(request=request, x_hub_signature_256=signature)
 
         assert result == payload
 
 
 class TestGithubWebhookValidatorIntegration:
-    """Integration tests for GithubWebhookValidator with FastAPI."""
+    """Integration tests for GithubWebhookValidator with FastAPI.
+
+    The validator is injected via ``Security(validator)`` so that FastAPI
+    passes the ``Request`` object and headers automatically.
+    """
 
     def test_missing_signature_header_returns_422(self):
         """Should return 422 when X-Hub-Signature-256 header is missing."""
@@ -79,21 +106,16 @@ class TestGithubWebhookValidatorIntegration:
 
         from typing import Annotated
 
-        from fastapi import Body, Header
-
         @app.post("/webhook")
-        def webhook_handler(
-            payload: Annotated[dict, Body(...)],
-            x_hub_signature_256: Annotated[str, Header(...)],
+        async def webhook_handler(
+            payload: Annotated[dict[str, Any], Security(validator)],
         ):
-            return validator(payload, x_hub_signature_256)
+            return payload
 
         client = TestClient(app, raise_server_exceptions=False)
 
-        # Send request without signature header
         response = client.post("/webhook", json={"test": "data"})
 
-        # FastAPI returns 422 for missing required headers
         assert response.status_code == 422
 
     def test_invalid_signature_returns_401(self):
@@ -103,14 +125,11 @@ class TestGithubWebhookValidatorIntegration:
 
         from typing import Annotated
 
-        from fastapi import Body, Header
-
         @app.post("/webhook")
-        def webhook_handler(
-            payload: Annotated[dict, Body(...)],
-            x_hub_signature_256: Annotated[str, Header(...)],
+        async def webhook_handler(
+            payload: Annotated[dict[str, Any], Security(validator)],
         ):
-            return validator(payload, x_hub_signature_256)
+            return payload
 
         client = TestClient(app, raise_server_exceptions=False)
 
@@ -131,14 +150,11 @@ class TestGithubWebhookValidatorIntegration:
 
         from typing import Annotated
 
-        from fastapi import Body, Header
-
         @app.post("/webhook")
-        def webhook_handler(
-            payload: Annotated[dict, Body(...)],
-            x_hub_signature_256: Annotated[str, Header(...)],
+        async def webhook_handler(
+            payload: Annotated[dict[str, Any], Security(validator)],
         ):
-            return validator(payload, x_hub_signature_256)
+            return payload
 
         payload = {"action": "opened"}
         signature = generate_signature(secret, payload)
@@ -161,14 +177,11 @@ class TestGithubWebhookValidatorIntegration:
 
         from typing import Annotated
 
-        from fastapi import Body, Header
-
         @app.post("/webhook")
-        def webhook_handler(
-            payload: Annotated[dict, Body(...)],
-            x_hub_signature_256: Annotated[str, Header(...)],
+        async def webhook_handler(
+            payload: Annotated[dict[str, Any], Security(validator)],
         ):
-            return validator(payload, x_hub_signature_256)
+            return payload
 
         payload = {}
         signature = generate_signature(secret, payload)
@@ -786,15 +799,17 @@ class TestGithubWebhookRouterEdgeCases:
 class TestGithubkitNotInstalled:
     """Tests for behavior when githubkit is not installed."""
 
-    def test_validator_call_without_githubkit(self):
+    async def test_validator_call_without_githubkit(self):
         """Validator should raise ImportError when verify is None."""
         validator = GithubWebhookValidator(secret="test")
+        raw = json.dumps({"test": "data"}).encode()
+        request = _mock_request(raw)
 
         with (
             patch("lambda_framework.webhook.github.verify", None),
             pytest.raises(ImportError),
         ):
-            validator({"test": "data"}, "sha256=fake")
+            await validator(request, "sha256=fake")
 
     def test_parser_init_without_githubkit(self):
         """Parser should raise ImportError when parse_obj is None."""
@@ -810,89 +825,98 @@ class TestGithubkitNotInstalled:
 class TestSignatureValidation:
     """Tests specifically for signature validation edge cases."""
 
-    def test_signature_mismatch_with_different_json_serialization(self):
-        """Signature should fail if JSON serialization differs."""
+    async def test_raw_bytes_used_for_verification(self):
+        """Signature must be verified against the exact raw bytes."""
         secret = "test-secret"
+        raw = b'{"key":"value","number":123}'
+        signature = generate_signature(secret, raw)
+        request = _mock_request(raw)
+
         validator = GithubWebhookValidator(secret=secret)
+        result = await validator(request=request, x_hub_signature_256=signature)
 
-        # Payload with spaces in JSON (non-compact)
-        payload = {"key": "value", "number": 123}
+        assert result == {"key": "value", "number": 123}
 
-        # Generate signature with compact JSON (no spaces)
-        compact_json = json.dumps(payload, separators=(",", ":"))
-        signature = (
-            "sha256="
-            + hmac.new(
-                secret.encode(), compact_json.encode(), hashlib.sha256
-            ).hexdigest()
+    async def test_escaped_forward_slashes_do_not_break_verification(self):
+        r"""Payloads with ``\/`` (escaped forward-slashes) must verify.
+
+        GitHub's JSON encoder escapes ``/`` as ``\/`` which is valid JSON.
+        Previously the validator re-serialized a parsed dict, losing the
+        escapes and breaking HMAC verification for URL-heavy payloads such
+        as dependabot alerts.
+        """
+        secret = "test-secret"
+        raw = (
+            b'{"action":"fixed","alert":'
+            b'{"url":"https:\\/\\/api.github.com\\/repos\\/o\\/r"}}'
         )
+        signature = generate_signature(secret, raw)
+        request = _mock_request(raw)
 
-        # This should work since we use the same serialization
-        result = validator(payload=payload, x_hub_signature_256=signature)
-        assert result == payload
+        validator = GithubWebhookValidator(secret=secret)
+        result = await validator(request=request, x_hub_signature_256=signature)
 
-    def test_empty_signature_rejected(self):
+        assert result == {
+            "action": "fixed",
+            "alert": {"url": "https://api.github.com/repos/o/r"},
+        }
+
+    async def test_empty_signature_rejected(self):
         """Empty signature should be rejected."""
         validator = GithubWebhookValidator(secret="test-secret")
+        raw = json.dumps({"test": "data"}).encode()
+        request = _mock_request(raw)
 
         from fastapi import HTTPException
 
         with pytest.raises(HTTPException) as exc_info:
-            validator(payload={"test": "data"}, x_hub_signature_256="")
+            await validator(request=request, x_hub_signature_256="")
 
         assert exc_info.value.status_code == 401
 
-    def test_signature_with_wrong_hash_algorithm_prefix(self):
+    async def test_signature_with_wrong_hash_algorithm_prefix(self):
         """Signature with wrong algorithm prefix should be rejected."""
         secret = "test-secret"
-        payload = {"test": "data"}
-
-        # Create signature with sha1 prefix instead of sha256
-        payload_bytes = json.dumps(payload, separators=(",", ":")).encode()
-        hash_value = hmac.new(
-            secret.encode(), payload_bytes, hashlib.sha256
-        ).hexdigest()
+        raw = json.dumps({"test": "data"}).encode()
+        hash_value = hmac.new(secret.encode(), raw, hashlib.sha256).hexdigest()
         wrong_prefix_signature = f"sha1={hash_value}"
 
         validator = GithubWebhookValidator(secret=secret)
+        request = _mock_request(raw)
 
         from fastapi import HTTPException
 
         with pytest.raises(HTTPException) as exc_info:
-            validator(payload=payload, x_hub_signature_256=wrong_prefix_signature)
+            await validator(request=request, x_hub_signature_256=wrong_prefix_signature)
 
         assert exc_info.value.status_code == 401
 
-    def test_very_long_payload(self):
+    async def test_very_long_payload(self):
         """Should handle very long payloads correctly."""
         secret = "test-secret"
-        # Create a large payload
         large_payload = {"data": "x" * 100000, "nested": {"key": "value" * 1000}}
-
-        signature = generate_signature(secret, large_payload)
+        raw = json.dumps(large_payload).encode()
+        signature = generate_signature(secret, raw)
+        request = _mock_request(raw)
 
         validator = GithubWebhookValidator(secret=secret)
-        result = validator(payload=large_payload, x_hub_signature_256=signature)
+        result = await validator(request=request, x_hub_signature_256=signature)
 
         assert result == large_payload
 
-    def test_payload_with_special_unicode(self):
-        """Should handle payloads with unicode characters.
-
-        Note: This test uses a mocked verify to avoid JSON serialization
-        differences between our test helper and githubkit's internal verify.
-        """
+    async def test_payload_with_special_unicode(self):
+        """Should handle payloads with unicode characters."""
         secret = "test-secret"
         unicode_payload = {
             "message": "Hello 世界 🌍",
             "emoji": "👍🎉🚀",
             "cyrillic": "Привет мир",
         }
+        raw = json.dumps(unicode_payload, ensure_ascii=False).encode()
+        signature = generate_signature(secret, raw)
+        request = _mock_request(raw)
 
-        with patch("lambda_framework.webhook.github.verify", return_value=True):
-            validator = GithubWebhookValidator(secret=secret)
-            result = validator(
-                payload=unicode_payload, x_hub_signature_256="sha256=anysig"
-            )
+        validator = GithubWebhookValidator(secret=secret)
+        result = await validator(request=request, x_hub_signature_256=signature)
 
         assert result == unicode_payload

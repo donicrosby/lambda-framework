@@ -19,7 +19,7 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
-    "botocore>=1.42.23",
+    "aioboto3>=13.0.0",
     "fastapi[standard]>=0.128.0",
     "githubkit>=0.14.2",
     "pre-commit>=4.5.1",
@@ -29,17 +29,24 @@ dev = [
     "ruff>=0.14.10",
     "types-redis>=4.6.0.20241004",
     "pottery-semaphore",
+    "slack_sdk>=3.27.0",
 ]
 
 [project.optional-dependencies]
 cache = [
     "redis>=7.0.0",
 ]
+eventbridge = [
+    "aioboto3>=13.0.0",
+]
 github = [
     "githubkit>=0.14.2",
     "pottery>=3.0.1",
     "pottery-semaphore",
     "redis>=7.0.0",
+]
+slack = [
+    "slack_sdk>=3.27.0",
 ]
 
 [tool.ruff]
